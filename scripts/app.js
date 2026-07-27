@@ -214,6 +214,9 @@
       showManageMembers: false,
       manageMembersGroupId: null,
       manageMembersSearchQuery: '',
+      showExportGroupModal: false,
+      exportGroupModalGroupId: null,
+      exportingFormat: null,
       showConfirmDeleteGroup: false,
       confirmDeleteGroupId: null,
       showConfirmRemoveMember: false,
@@ -440,6 +443,23 @@
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
+  // Sur mobile, proposer directement la feuille de partage native (pour
+  // renvoyer l'export par WhatsApp/e-mail sans étape manuelle) plutôt qu'un
+  // téléchargement silencieux — même logique que shareInviteLink. Repli sur
+  // le téléchargement classique si l'appareil/navigateur ne sait pas
+  // partager de fichiers (ou si le partage échoue/est annulé : pas de
+  // double action, l'utilisateur peut relancer l'export s'il change d'avis).
+  function shareOrDownloadFile(filename, content, mime, toastMsg) {
+    var blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+    var file = null;
+    try { file = new File([blob], filename, { type: mime }); } catch (err) { file = null; }
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file] }).catch(function () {});
+      return;
+    }
+    downloadBlob(filename, blob, mime);
+    showToast(toastMsg);
+  }
 
   // Rassemble les données d'export d'un groupe : dépenses détaillées, soldes
   // nets par personne et transactions à effectuer pour équilibrer (même
@@ -523,15 +543,17 @@
   }
 
   function exportGroupCsv(groupId) {
+    if (state.exportingFormat) return;
     var d = buildGroupExportTables(groupId);
     if (!d) return;
+    setState({ exportingFormat: 'csv' });
     var lines = [['Dépenses'], d.expenses.header].concat(d.expenses.rows, [
       [], ['Soldes par personne'], d.balances.header,
     ], d.balances.rows, [
       [], ['Transactions à effectuer'], d.settlements.header,
     ], d.settlements.rows);
-    downloadBlob('rohy-' + slugify(d.group.name) + '.csv', '﻿' + toCsv(lines), 'text/csv;charset=utf-8');
-    showToast('Export CSV téléchargé');
+    shareOrDownloadFile('rohy-' + slugify(d.group.name) + '.csv', '﻿' + toCsv(lines), 'text/csv;charset=utf-8', 'Export CSV téléchargé');
+    setState({ exportingFormat: null });
   }
 
   // En-tête de marque partagé par chaque feuille du classeur : logo (image
@@ -578,9 +600,11 @@
   }
 
   function exportGroupExcel(groupId) {
+    if (state.exportingFormat) return;
     if (typeof ExcelJS === 'undefined') { showToast('Erreur : bibliothèque Excel indisponible (hors ligne ?).'); return; }
     var d = buildGroupExportTables(groupId);
     if (!d) return;
+    setState({ exportingFormat: 'excel' });
     logoPngDataUrl(64).then(function (logoPng) {
       var wb = new ExcelJS.Workbook();
       wb.creator = 'Rohy';
@@ -590,17 +614,20 @@
       addBrandedSheet(wb, logoImageId, 'Transactions', d.group.name + ' — transactions à effectuer', d.settlements.header, d.settlements.rows, [2]);
       return wb.xlsx.writeBuffer();
     }).then(function (buffer) {
-      downloadBlob('rohy-' + slugify(d.group.name) + '.xlsx', buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      showToast('Export Excel téléchargé');
+      shareOrDownloadFile('rohy-' + slugify(d.group.name) + '.xlsx', buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Export Excel téléchargé');
     }).catch(function () {
       showToast('Erreur : échec de la génération du fichier Excel.');
+    }).then(function () {
+      setState({ exportingFormat: null });
     });
   }
 
   function exportGroupPdf(groupId) {
+    if (state.exportingFormat) return;
     if (typeof jspdf === 'undefined') { showToast('Erreur : bibliothèque PDF indisponible (hors ligne ?).'); return; }
     var d = buildGroupExportTables(groupId);
     if (!d) return;
+    setState({ exportingFormat: 'pdf' });
     // Le séparateur de milliers de toLocaleString('fr-FR') est une espace
     // fine insécable (U+202F) — absente de la police Helvetica intégrée à
     // jsPDF, qui affiche alors un glyphe de remplacement (un "/") à sa place.
@@ -647,10 +674,11 @@
         body: d.settlements.rows.length ? fmtRows(d.settlements.rows, [2]) : [['—', '—', 'Rien à régler']],
         styles: { fontSize: 8 }, headStyles: brandHeadStyles, alternateRowStyles: brandAltRow,
       });
-      doc.save('rohy-' + slugify(d.group.name) + '.pdf');
-      showToast('Export PDF téléchargé');
+      shareOrDownloadFile('rohy-' + slugify(d.group.name) + '.pdf', doc.output('blob'), 'application/pdf', 'Export PDF téléchargé');
     }).catch(function () {
       showToast('Erreur : échec de la génération du PDF.');
+    }).then(function () {
+      setState({ exportingFormat: null });
     });
   }
 
@@ -2129,6 +2157,7 @@
   }
 
   function openManageMembers(groupId) { setState({ showManageMembers: true, manageMembersGroupId: groupId, manageMembersSearchQuery: '' }); }
+  function openExportGroupModal(groupId) { setState({ showGroupMenu: false, showExportGroupModal: true, exportGroupModalGroupId: groupId }); }
   function setManageMembersSearch(v) { setState({ manageMembersSearchQuery: v }); }
   function toggleAddMemberForm() {
     setState(function (s) {
@@ -2390,7 +2419,7 @@
     lastModalScrollTop = null;
     setState({
       showAddExpense: false, showAddGroup: false, showSettle: false, showAccount: false, showGroupMenu: false, showManageMembers: false,
-      showExpenseFilters: false,
+      showExpenseFilters: false, showExportGroupModal: false, exportGroupModalGroupId: null,
       showConfirmDeleteGroup: false, confirmDeleteGroupId: null, formError: null,
       showConfirmRemoveMember: false, confirmRemoveMemberGroupId: null, confirmRemoveMemberId: null,
       showConfirmLeaveGroup: false, confirmLeaveGroupId: null,
@@ -3097,6 +3126,7 @@
         '<div class="group-menu-dropdown" data-stop-click>' +
         '<button class="group-menu-item pressable" data-action="openManageMembers" data-id="' + g.id + '"><i class="ph-bold ph-users-three"></i>Gérer les membres</button>' +
         '<button class="group-menu-item pressable" data-action="shareInviteLink" data-id="' + g.id + '"><i class="ph-bold ph-link"></i>Partager le lien d\'invitation</button>' +
+        '<button class="group-menu-item pressable" data-action="openExportGroupModal" data-id="' + g.id + '"><i class="ph-bold ph-export"></i>Exporter les dépenses</button>' +
         (isAdmin ?
           '<button class="group-menu-item pressable" style="color:var(--status-danger)" data-action="openConfirmDeleteGroup" data-id="' + g.id + '"><i class="ph-bold ph-trash" style="color:var(--status-danger)"></i>Supprimer le groupe</button>' :
           '<button class="group-menu-item pressable" style="color:var(--status-danger)" data-action="openConfirmLeaveGroup" data-id="' + g.id + '"><i class="ph-bold ph-door-open" style="color:var(--status-danger)"></i>Quitter ce groupe</button>') +
@@ -3288,6 +3318,43 @@
       '<button class="btn-outline pressable" style="flex:1" data-action="resetExpenseFilters">Réinitialiser</button>' +
       '<button class="btn-primary pressable" style="flex:1" data-action="closeModal">Voir les résultats</button>' +
       '</div>' +
+      '</div></div>'
+    );
+  }
+
+  // Format + icône + phrase d'aide pour chaque ligne de la modale "Exporter"
+  // — un mot nu par pastille ne distinguait pas assez l'usage attendu de
+  // chaque format (cf. proposition UX : icônes + sous-texte).
+  var EXPORT_FORMATS = [
+    { id: 'csv', label: 'CSV', icon: 'ph-file-csv', help: 'Universel, tableurs & imports', action: 'exportGroupCsv' },
+    { id: 'excel', label: 'Excel', icon: 'ph-file-xls', help: 'Pour retravailler les chiffres', action: 'exportGroupExcel' },
+    { id: 'pdf', label: 'PDF', icon: 'ph-file-pdf', help: 'Pour imprimer ou archiver', action: 'exportGroupPdf' },
+  ];
+  function renderExportGroupModal() {
+    var g = group(state.exportGroupModalGroupId);
+    if (!g) return '';
+    var busy = state.exportingFormat;
+    var rows = EXPORT_FORMATS.map(function (f) {
+      var isBusy = busy === f.id;
+      return (
+        '<button class="export-format-row pressable" style="' + (busy && !isBusy ? 'opacity:.5' : '') + '"' +
+        (busy ? ' disabled' : '') + ' data-action="' + f.action + '" data-id="' + g.id + '">' +
+        '<div class="export-format-icon"><i class="ph-bold ' + (isBusy ? 'ph-spinner spin' : f.icon) + '"></i></div>' +
+        '<div style="flex:1;min-width:0;text-align:left">' +
+        '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">' + f.label + '</div>' +
+        '<div style="font-size:12px;color:var(--text-tertiary)">' + (isBusy ? 'Génération en cours…' : escapeHtml(f.help)) + '</div>' +
+        '</div>' +
+        '<i class="ph-bold ph-caret-right" style="color:var(--text-tertiary)"></i>' +
+        '</button>'
+      );
+    }).join('');
+    return (
+      '<div class="modal-overlay bottom" data-action="closeModal">' +
+      '<div class="modal-sheet" data-stop-click>' +
+      '<div class="modal-header"><div class="modal-title">Exporter · ' + escapeHtml(g.name) + '</div>' +
+      '<button class="modal-close" data-action="closeModal" aria-label="Fermer"><i class="ph-bold ph-x"></i></button></div>' +
+      '<div style="font-size:12.5px;color:var(--text-tertiary);margin-bottom:14px">Dépenses détaillées, soldes par personne et transactions à effectuer.</div>' +
+      rows +
       '</div></div>'
     );
   }
@@ -3607,13 +3674,7 @@
         '<div class="section-label">Pour équilibrer</div>' +
         (txns.length ? suggestions : '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:14px">Rien à régler pour le moment.</div>') : '') +
       '<div class="section-label" style="margin-top:18px">Dépenses</div>' + expenseRows +
-      '<button class="btn-primary pressable" style="margin-top:18px" data-action="openAddExpenseForGroup">Ajouter une dépense</button>' +
-      '<div class="section-label" style="margin-top:18px">Exporter (dépenses et soldes)</div>' +
-      '<div class="pill-row">' +
-      '<div class="pill" data-action="exportGroupCsv" data-id="' + g.id + '">CSV</div>' +
-      '<div class="pill" data-action="exportGroupExcel" data-id="' + g.id + '">Excel</div>' +
-      '<div class="pill" data-action="exportGroupPdf" data-id="' + g.id + '">PDF</div>' +
-      '</div>'
+      '<button class="btn-primary pressable" style="margin-top:18px" data-action="openAddExpenseForGroup">Ajouter une dépense</button>'
     );
   }
 
@@ -4169,6 +4230,7 @@
     if (state.showEditProfile) out += renderEditProfileModal();
     if (state.showReminderConfirm) out += renderReminderConfirmModal();
     if (state.showExpenseFilters) out += renderExpenseFiltersModal();
+    if (state.showExportGroupModal) out += renderExportGroupModal();
     return out;
   }
 
@@ -4896,6 +4958,7 @@
         case 'openAddExpenseForGroup': openAddExpense(state.selectedGroupId); break;
         case 'openAddGroup': openAddGroup(); break;
         case 'openManageMembers': openManageMembers(id); break;
+        case 'openExportGroupModal': openExportGroupModal(id); break;
         case 'generateShareLink': generateShareLink(); break;
         case 'disableShareLink': disableShareLink(); break;
         case 'copyShareLink': copyShareLink(); break;
