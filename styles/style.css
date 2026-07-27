@@ -447,16 +447,6 @@ button { font-family: inherit; }
 
 .person-row { display: flex; align-items: center; gap: 12px; background: var(--surface-raised); border-radius: 16px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; border: none; width: 100%; text-align: left; }
 .person-row:active { transform: scale(0.98); }
-/* Ligne de choix de format dans la modale "Exporter" (écran Groupe) — même
-   gabarit que .person-row (icône + libellé + sous-texte + chevron) pour
-   marquer clairement "ceci déclenche une action", à l'opposé de l'ancien
-   rendu en .pill qui suggérait à tort un choix de filtre. */
-.export-format-row { display: flex; align-items: center; gap: 12px; background: var(--surface-raised); border-radius: 16px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; border: none; width: 100%; text-align: left; }
-.export-format-row:active:not(:disabled) { transform: scale(0.98); }
-.export-format-row:disabled { cursor: default; }
-.export-format-icon { width: 40px; height: 40px; border-radius: 12px; background: var(--surface-overlay); display: flex; align-items: center; justify-content: center; color: var(--brand-primary); font-size: 18px; flex-shrink: 0; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.spin { display: inline-block; animation: spin .8s linear infinite; }
 .person-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .badge-child { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--status-warning); background: var(--status-warning-bg); padding: 2px 8px; border-radius: 999px; display: inline-block; margin-top: 3px; }
 .badge-child.inline { font-size: 9.5px; padding: 2px 6px; margin-left: 5px; margin-top: 0; }
