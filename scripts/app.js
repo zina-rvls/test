@@ -440,24 +440,6 @@
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
-  // Sur mobile, proposer directement la feuille de partage native (pour
-  // renvoyer l'export par WhatsApp/e-mail sans étape manuelle) plutôt qu'un
-  // téléchargement silencieux — même logique que shareInviteLink. Repli sur
-  // le téléchargement classique si l'appareil/navigateur ne sait pas
-  // partager de fichiers (ou si le partage échoue/est annulé : pas de
-  // double action, l'utilisateur peut relancer l'export s'il change d'avis).
-  function shareOrDownloadFile(filename, content, mime, toastMsg) {
-    var blob = content instanceof Blob ? content : new Blob([content], { type: mime });
-    var file = null;
-    try { file = new File([blob], filename, { type: mime }); } catch (err) { file = null; }
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file] }).catch(function () {});
-      return;
-    }
-    downloadBlob(filename, blob, mime);
-    showToast(toastMsg);
-  }
-
   // Rassemble les données d'export d'un groupe : dépenses détaillées, soldes
   // nets par personne et transactions à effectuer pour équilibrer (même
   // logique que "pour équilibrer" affiché sur la fiche groupe). Montants en
@@ -548,7 +530,8 @@
     ], d.balances.rows, [
       [], ['Transactions à effectuer'], d.settlements.header,
     ], d.settlements.rows);
-    shareOrDownloadFile('rohy-' + slugify(d.group.name) + '.csv', '﻿' + toCsv(lines), 'text/csv;charset=utf-8', 'Export CSV téléchargé');
+    downloadBlob('rohy-' + slugify(d.group.name) + '.csv', '﻿' + toCsv(lines), 'text/csv;charset=utf-8');
+    showToast('Export CSV téléchargé');
   }
 
   // En-tête de marque partagé par chaque feuille du classeur : logo (image
@@ -608,7 +591,8 @@
       addBrandedSheet(wb, logoImageId, 'Transactions', d.group.name + ' — transactions à effectuer', d.settlements.header, d.settlements.rows, [2]);
       return wb.xlsx.writeBuffer();
     }).then(function (buffer) {
-      shareOrDownloadFile('rohy-' + slugify(d.group.name) + '.xlsx', buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Export Excel téléchargé');
+      downloadBlob('rohy-' + slugify(d.group.name) + '.xlsx', buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      showToast('Export Excel téléchargé');
     }).catch(function () {
       showToast('Erreur : échec de la génération du fichier Excel.');
     });
@@ -665,7 +649,8 @@
         body: d.settlements.rows.length ? fmtRows(d.settlements.rows, [2]) : [['—', '—', 'Rien à régler']],
         styles: { fontSize: 8 }, headStyles: brandHeadStyles, alternateRowStyles: brandAltRow,
       });
-      shareOrDownloadFile('rohy-' + slugify(d.group.name) + '.pdf', doc.output('blob'), 'application/pdf', 'Export PDF téléchargé');
+      doc.save('rohy-' + slugify(d.group.name) + '.pdf');
+      showToast('Export PDF téléchargé');
     }).catch(function () {
       showToast('Erreur : échec de la génération du PDF.');
     });
