@@ -259,6 +259,15 @@
       expensesSearchQuery: '',
       expensesPersonFilter: null,
       expensesCategoryFilter: null,
+      expensesDatePreset: 'all',
+      expensesDateFrom: '',
+      expensesDateTo: '',
+      expensesStatusFilter: null,
+      expensesAmountMin: '',
+      expensesAmountMax: '',
+      showExpenseFilters: false,
+      expensesFilterGroupSearch: '',
+      expensesFilterPersonSearch: '',
       expensesSort: 'date_desc',
       lastActiveGroupId: null,
       groupForm: { name: '', currency: seed.CURRENCIES[0].code, invitees: [{ name: '', email: '', shareWeight: '1', linkExistingId: null }] },
@@ -892,6 +901,35 @@
   function setExpensesPersonFilter(id) { setState({ expensesPersonFilter: id || null }); }
   function setExpensesCategoryFilter(id) { setState({ expensesCategoryFilter: id || null }); }
   function setExpensesSort(v) { setState({ expensesSort: v }); }
+  function toggleExpenseFilters() { setState(function (s) { return { showExpenseFilters: !s.showExpenseFilters }; }); }
+  function setExpensesDatePreset(v) { setState({ expensesDatePreset: v || 'all', expensesDateFrom: '', expensesDateTo: '' }); }
+  function setExpensesDateFrom(v) { setState({ expensesDatePreset: 'custom', expensesDateFrom: v }); }
+  function setExpensesDateTo(v) { setState({ expensesDatePreset: 'custom', expensesDateTo: v }); }
+  function setExpensesStatusFilter(v) { setState({ expensesStatusFilter: v || null }); }
+  function setExpensesAmountMin(v) { setState({ expensesAmountMin: v }); }
+  function setExpensesAmountMax(v) { setState({ expensesAmountMax: v }); }
+  function setExpensesFilterGroupSearch(v) { setState({ expensesFilterGroupSearch: v }); }
+  function setExpensesFilterPersonSearch(v) { setState({ expensesFilterPersonSearch: v }); }
+  // Un seul bouton "Réinitialiser" pour toutes les dimensions de filtre de
+  // l'écran Dépenses (hors recherche texte et tri, qui ne sont pas des
+  // filtres au sens propre — cf. proposition UX : trier ≠ filtrer).
+  function resetExpenseFilters() {
+    setState({
+      expensesGroupFilter: null, expensesPersonFilter: null, expensesCategoryFilter: null,
+      expensesDatePreset: 'all', expensesDateFrom: '', expensesDateTo: '',
+      expensesStatusFilter: null, expensesAmountMin: '', expensesAmountMax: '',
+    });
+  }
+  // Retire une seule puce de filtre actif (ligne de résumé au-dessus de la
+  // liste), sans toucher aux autres dimensions actives.
+  function removeExpenseFilterChip(key) {
+    if (key === 'group') setExpensesGroupFilter(null);
+    else if (key === 'person') setExpensesPersonFilter(null);
+    else if (key === 'category') setExpensesCategoryFilter(null);
+    else if (key === 'date') setExpensesDatePreset('all');
+    else if (key === 'status') setExpensesStatusFilter(null);
+    else if (key === 'amount') setState({ expensesAmountMin: '', expensesAmountMax: '' });
+  }
   function setPersonGroupFilter(id) { setState({ personGroupFilter: id || null }); }
   function toggleTheme() {
     setState(function (s) {
@@ -2352,6 +2390,7 @@
     lastModalScrollTop = null;
     setState({
       showAddExpense: false, showAddGroup: false, showSettle: false, showAccount: false, showGroupMenu: false, showManageMembers: false,
+      showExpenseFilters: false,
       showConfirmDeleteGroup: false, confirmDeleteGroupId: null, formError: null,
       showConfirmRemoveMember: false, confirmRemoveMemberGroupId: null, confirmRemoveMemberId: null,
       showConfirmLeaveGroup: false, confirmLeaveGroupId: null,
@@ -3099,36 +3138,158 @@
     return '<div class="pill-row" style="margin-bottom:16px">' + allPill + groupPills + '</div>';
   }
 
-  // Remplace l'ancien filtre booléen "Me concerne uniquement" : un filtre
-  // par personne (n'importe quel membre, pas seulement soi) pour voir les
-  // dépenses propres à chacun, sur le même modèle que les filtres groupe/
-  // catégorie ci-dessus. N'affiche que les personnes réellement présentes
-  // dans les dépenses du périmètre courant (payeur ou participant).
-  function renderPersonFilterPills(selectedId, expensesInScope) {
-    var presentIds = {};
-    expensesInScope.forEach(function (e) {
-      presentIds[e.paidBy] = true;
-      e.participants.forEach(function (pid) { presentIds[pid] = true; });
-    });
-    var people = Object.keys(presentIds).map(function (pid) { return person(pid); }).filter(Boolean);
-    if (people.length < 2) return '';
-    people.sort(function (a, b) { return a.name.localeCompare(b.name); });
-    var allPill = '<div class="pill' + (!selectedId ? ' active' : '') + '" data-action="setExpensesPersonFilter" data-id="">Tous les membres</div>';
-    var personPills = people.map(function (p) {
-      return '<div class="pill' + (selectedId === p.id ? ' active' : '') + '" data-action="setExpensesPersonFilter" data-id="' + p.id + '">' + escapeHtml(p.name) + '</div>';
-    }).join('');
-    return '<div class="pill-row" style="margin-bottom:10px">' + allPill + personPills + '</div>';
+  // Options des filtres Statut/Période de l'écran Dépenses — partagées entre
+  // la modale (choix) et les puces de résumé (libellé court affiché).
+  var EXPENSE_STATUS_OPTIONS = [
+    { id: 'personnelle', label: 'Personnelle' },
+    { id: 'remboursée', label: 'Remboursée' },
+    { id: 'partiellement remboursée', label: 'Partielle' },
+    { id: 'non remboursée', label: 'Non remboursée' },
+  ];
+  var EXPENSE_DATE_PRESETS = [
+    { id: 'all', label: 'Toutes les dates' },
+    { id: 'this_month', label: 'Ce mois-ci' },
+    { id: 'last_month', label: 'Mois dernier' },
+    { id: 'this_year', label: 'Cette année' },
+    { id: 'custom', label: 'Personnalisé' },
+  ];
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  // e.date est au format 'AAAA-MM-JJ' (tri déjà fait par comparaison de
+  // chaînes ailleurs, cf. sortComparators) — un simple préfixe suffit donc
+  // pour "ce mois-ci"/"cette année", pas besoin de parser en Date.
+  function expenseDateMatchesFilter(e, preset, from, to) {
+    if (!preset || preset === 'all') return true;
+    if (preset === 'custom') {
+      if (from && e.date < from) return false;
+      if (to && e.date > to) return false;
+      return true;
+    }
+    var now = new Date();
+    if (preset === 'this_month') return e.date.indexOf(now.getFullYear() + '-' + pad2(now.getMonth() + 1)) === 0;
+    if (preset === 'last_month') {
+      var lm = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      var ly = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      return e.date.indexOf(ly + '-' + pad2(lm + 1)) === 0;
+    }
+    if (preset === 'this_year') return e.date.indexOf(String(now.getFullYear())) === 0;
+    return true;
   }
-
-  function renderCategoryFilterPills(selectedId, expensesInScope) {
-    var presentIds = {};
-    expensesInScope.forEach(function (e) { presentIds[categoryForIcon(e.icon)] = true; });
-    if (Object.keys(presentIds).length < 2) return '';
-    var allPill = '<div class="pill' + (!selectedId ? ' active' : '') + '" data-action="setExpensesCategoryFilter" data-id="">Toutes catégories</div>';
-    var catPills = seed.EXPENSE_CATEGORIES.filter(function (c) { return presentIds[c.id]; }).map(function (c) {
-      return '<div class="pill' + (selectedId === c.id ? ' active' : '') + '" data-action="setExpensesCategoryFilter" data-id="' + c.id + '"><i class="' + c.icon + '" style="margin-right:5px"></i>' + escapeHtml(c.label) + '</div>';
+  // Une dimension de filtre à choix multiple (Groupe/Membre/Catégorie) dans
+  // la modale "Filtres" : pastilles si peu de valeurs, sinon un champ de
+  // recherche au-dessus pour ne pas faire exploser la hauteur de la feuille
+  // (même seuil que "Gérer les membres", cf. renderManageMembersModal).
+  function renderFilterOptionsSection(label, allLabel, items, selectedId, action, searchQuery, searchBind) {
+    if (items.length < 2) return '';
+    var useSearch = items.length > 5;
+    var visible = items;
+    if (useSearch && (searchQuery || '').trim()) {
+      var q = searchQuery.trim().toLowerCase();
+      visible = items.filter(function (it) { return it.name.toLowerCase().indexOf(q) !== -1; });
+    }
+    var allPill = '<div class="pill' + (!selectedId ? ' active' : '') + '" data-action="' + action + '" data-id="">' + escapeHtml(allLabel) + '</div>';
+    var pills = visible.map(function (it) {
+      return '<div class="pill' + (selectedId === it.id ? ' active' : '') + '" data-action="' + action + '" data-id="' + it.id + '">' +
+        (it.icon ? '<i class="' + it.icon + '" style="margin-right:5px"></i>' : '') + escapeHtml(it.name) + '</div>';
     }).join('');
-    return '<div class="pill-row" style="margin-bottom:10px">' + allPill + catPills + '</div>';
+    return '<div class="section-label">' + escapeHtml(label) + '</div>' +
+      (useSearch ? '<input class="text-input" data-bind="' + searchBind + '" placeholder="Rechercher..." value="' + escapeHtml(searchQuery || '') + '" />' : '') +
+      '<div class="pill-row" style="margin-bottom:16px">' + allPill + pills + '</div>';
+  }
+  // Nombre de dimensions actives, pour le badge sur le bouton "Filtres" — la
+  // recherche texte et le tri n'en font pas partie (cf. proposition UX :
+  // trier ≠ filtrer).
+  function activeExpenseFilterChips() {
+    var chips = [];
+    if (state.expensesGroupFilter) {
+      var g = group(state.expensesGroupFilter);
+      if (g) chips.push({ key: 'group', label: g.name });
+    }
+    if (state.expensesPersonFilter) {
+      var p = person(state.expensesPersonFilter);
+      if (p) chips.push({ key: 'person', label: p.name });
+    }
+    if (state.expensesCategoryFilter) {
+      var cat = seed.EXPENSE_CATEGORIES.find(function (c) { return c.id === state.expensesCategoryFilter; });
+      if (cat) chips.push({ key: 'category', label: cat.label });
+    }
+    if (state.expensesDatePreset && state.expensesDatePreset !== 'all') {
+      var preset = EXPENSE_DATE_PRESETS.find(function (d) { return d.id === state.expensesDatePreset; });
+      var dateLabel = state.expensesDatePreset === 'custom'
+        ? ((state.expensesDateFrom ? fmtDate(state.expensesDateFrom) : '…') + ' → ' + (state.expensesDateTo ? fmtDate(state.expensesDateTo) : '…'))
+        : (preset ? preset.label : '');
+      chips.push({ key: 'date', label: dateLabel });
+    }
+    if (state.expensesStatusFilter) {
+      var st = EXPENSE_STATUS_OPTIONS.find(function (s) { return s.id === state.expensesStatusFilter; });
+      if (st) chips.push({ key: 'status', label: st.label });
+    }
+    if ((state.expensesAmountMin || '').trim() || (state.expensesAmountMax || '').trim()) {
+      var minL = (state.expensesAmountMin || '').trim(), maxL = (state.expensesAmountMax || '').trim();
+      chips.push({ key: 'amount', label: minL && maxL ? minL + '–' + maxL : minL ? '≥ ' + minL : '≤ ' + maxL });
+    }
+    return chips;
+  }
+  function renderExpenseFilterChips(chips) {
+    if (!chips.length) return '';
+    return '<div class="pill-row" style="margin-bottom:10px">' + chips.map(function (c) {
+      return '<div class="filter-chip pressable" data-action="removeExpenseFilterChip" data-id="' + c.key + '">' + escapeHtml(c.label) + '<i class="ph-bold ph-x"></i></div>';
+    }).join('') + '</div>';
+  }
+  function renderExpenseFiltersModal() {
+    var filterId = state.expensesGroupFilter && group(state.expensesGroupFilter) ? state.expensesGroupFilter : null;
+    var scopedExpenses = filterId ? state.expenses.filter(function (e) { return e.groupId === filterId; }) : state.expenses;
+
+    var groupItems = state.groups.map(function (g) { return { id: g.id, name: g.name }; });
+
+    var presentPersonIds = {};
+    scopedExpenses.forEach(function (e) {
+      presentPersonIds[e.paidBy] = true;
+      e.participants.forEach(function (pid) { presentPersonIds[pid] = true; });
+    });
+    var personItems = Object.keys(presentPersonIds).map(function (pid) { return person(pid); }).filter(Boolean)
+      .map(function (p) { return { id: p.id, name: p.name }; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+    var presentCatIds = {};
+    scopedExpenses.forEach(function (e) { presentCatIds[categoryForIcon(e.icon)] = true; });
+    var categoryItems = seed.EXPENSE_CATEGORIES.filter(function (c) { return presentCatIds[c.id]; })
+      .map(function (c) { return { id: c.id, name: c.label, icon: c.icon }; });
+
+    return (
+      '<div class="modal-overlay bottom" data-action="closeModal">' +
+      '<div class="modal-sheet" data-stop-click>' +
+      '<div class="modal-header"><div class="modal-title">Filtres</div>' +
+      '<button class="modal-close" data-action="closeModal" aria-label="Fermer"><i class="ph-bold ph-x"></i></button></div>' +
+      renderFilterOptionsSection('Groupe', 'Tous les groupes', groupItems, filterId, 'setExpensesGroupFilter', state.expensesFilterGroupSearch, 'expensesFilterGroupSearch') +
+      renderFilterOptionsSection('Membre', 'Tous les membres', personItems, state.expensesPersonFilter, 'setExpensesPersonFilter', state.expensesFilterPersonSearch, 'expensesFilterPersonSearch') +
+      renderFilterOptionsSection('Catégorie', 'Toutes catégories', categoryItems, state.expensesCategoryFilter, 'setExpensesCategoryFilter', '', '') +
+      '<div class="section-label">Période</div>' +
+      '<div class="pill-row" style="margin-bottom:16px">' + EXPENSE_DATE_PRESETS.map(function (d) {
+        return '<div class="pill' + (state.expensesDatePreset === d.id ? ' active' : '') + '" data-action="setExpensesDatePreset" data-id="' + d.id + '">' + escapeHtml(d.label) + '</div>';
+      }).join('') + '</div>' +
+      (state.expensesDatePreset === 'custom' ?
+        '<div style="display:flex;gap:8px;margin:-8px 0 16px">' +
+        '<div style="flex:1"><div class="field-label">Du</div><input class="text-input" style="margin-bottom:0" type="date" data-bind="expensesDateFrom" value="' + escapeHtml(state.expensesDateFrom) + '" /></div>' +
+        '<div style="flex:1"><div class="field-label">Au</div><input class="text-input" style="margin-bottom:0" type="date" data-bind="expensesDateTo" value="' + escapeHtml(state.expensesDateTo) + '" /></div>' +
+        '</div>' : '') +
+      '<div class="section-label">Statut</div>' +
+      '<div class="pill-row" style="margin-bottom:16px">' +
+      '<div class="pill' + (!state.expensesStatusFilter ? ' active' : '') + '" data-action="setExpensesStatusFilter" data-id="">Tous statuts</div>' +
+      EXPENSE_STATUS_OPTIONS.map(function (s) {
+        return '<div class="pill' + (state.expensesStatusFilter === s.id ? ' active' : '') + '" data-action="setExpensesStatusFilter" data-id="' + s.id + '">' + escapeHtml(s.label) + '</div>';
+      }).join('') + '</div>' +
+      '<div class="section-label">Montant</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:20px">' +
+      '<input class="text-input" style="margin-bottom:0" inputmode="decimal" placeholder="Min" data-bind="expensesAmountMin" value="' + escapeHtml(state.expensesAmountMin) + '" />' +
+      '<span style="color:var(--text-tertiary)">–</span>' +
+      '<input class="text-input" style="margin-bottom:0" inputmode="decimal" placeholder="Max" data-bind="expensesAmountMax" value="' + escapeHtml(state.expensesAmountMax) + '" />' +
+      '</div>' +
+      '<div style="display:flex;gap:10px">' +
+      '<button class="btn-outline pressable" style="flex:1" data-action="resetExpenseFilters">Réinitialiser</button>' +
+      '<button class="btn-primary pressable" style="flex:1" data-action="closeModal">Voir les résultats</button>' +
+      '</div>' +
+      '</div></div>'
+    );
   }
 
   function renderHome() {
@@ -3514,9 +3675,16 @@
     var searchQuery = (state.expensesSearchQuery || '').trim().toLowerCase();
     var personFilter = state.expensesPersonFilter || null;
     var categoryFilter = state.expensesCategoryFilter || null;
+    var statusFilter = state.expensesStatusFilter || null;
+    var amountMin = parseFloat((state.expensesAmountMin || '').replace(',', '.'));
+    var amountMax = parseFloat((state.expensesAmountMax || '').replace(',', '.'));
     var visibleExpenses = expenses.filter(function (e) {
       if (personFilter && e.paidBy !== personFilter && e.participants.indexOf(personFilter) === -1) return false;
       if (categoryFilter && categoryForIcon(e.icon) !== categoryFilter) return false;
+      if (statusFilter && (!statuses[e.id] || statuses[e.id].status !== statusFilter)) return false;
+      if (!isNaN(amountMin) && e.amount < amountMin) return false;
+      if (!isNaN(amountMax) && e.amount > amountMax) return false;
+      if (!expenseDateMatchesFilter(e, state.expensesDatePreset, state.expensesDateFrom, state.expensesDateTo)) return false;
       if (!searchQuery) return true;
       var g = group(e.groupId);
       return e.label.toLowerCase().indexOf(searchQuery) !== -1
@@ -3557,12 +3725,12 @@
     }).join('');
 
     var mixedCurrencies = !filterId && !groupsHaveSingleCurrency();
+    var activeChips = activeExpenseFilterChips();
 
     return (
-      renderGroupFilterPills(filterId, 'setExpensesGroupFilter') +
       (mixedCurrencies ?
         '<div class="warning-banner"><div class="warning-banner-title"><i class="ph-bold ph-coins"></i> Devises multiples</div>' +
-        '<div class="warning-banner-body">Tes groupes utilisent des devises différentes — choisis un groupe ci-dessus pour voir les totaux.</div></div>' :
+        '<div class="warning-banner-body">Tes groupes utilisent des devises différentes — choisis un groupe dans les filtres pour voir les totaux.</div></div>' :
         '<div class="summary-cards">' +
         '<div class="summary-card"><div class="summary-card-label">Total</div><div class="summary-card-value" style="color:var(--text-primary)">' + fmtC(total) + '</div></div>' +
         '<div class="summary-card"><div class="summary-card-label">Remboursé</div><div class="summary-card-value" style="color:var(--status-positive)">' + fmtC(totalOwed - totalRemaining) + '</div></div>' +
@@ -3570,9 +3738,7 @@
         '</div>' +
         (totalDueExternal > 0.5 ? '<div class="warning-banner" style="padding:10px 14px;font-size:12.5px">' + fmtC(totalDueExternal) + ' restent à verser à des tiers (acomptes non soldés)</div>' : '')) +
       (expenses.length > 0 ?
-        renderPersonFilterPills(personFilter, expenses) +
-        renderCategoryFilterPills(categoryFilter, expenses) +
-        '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
         '<input class="text-input" style="margin-bottom:0;flex:1" data-bind="expensesSearch" placeholder="Rechercher une dépense..." value="' + escapeHtml(state.expensesSearchQuery) + '" />' +
         '<select class="text-input" style="margin-bottom:0;width:auto;flex-shrink:0" data-bind-change="expensesSort">' +
         '<option value="date_desc"' + (sortBy === 'date_desc' ? ' selected' : '') + '>Plus récentes</option>' +
@@ -3580,10 +3746,15 @@
         '<option value="amount_desc"' + (sortBy === 'amount_desc' ? ' selected' : '') + '>Montant décroissant</option>' +
         '<option value="amount_asc"' + (sortBy === 'amount_asc' ? ' selected' : '') + '>Montant croissant</option>' +
         '</select>' +
-        '</div>' : '') +
+        '<button class="icon-btn pressable" style="position:relative" data-action="toggleExpenseFilters" aria-label="Filtres"><i class="ph-bold ph-funnel"></i>' +
+        (activeChips.length ? '<span class="filter-count-badge">' + activeChips.length + '</span>' : '') +
+        '</button>' +
+        '</div>' +
+        renderExpenseFilterChips(activeChips) : '') +
       (expenses.length === 0 ? '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px">Aucune dépense dans ce groupe.</div>' :
         visibleExpenses.length === 0 ? '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px">' +
-          (searchQuery ? 'Aucune dépense ne correspond à « ' + escapeHtml(state.expensesSearchQuery) + ' ».' : 'Aucune dépense ne correspond à ces filtres.') +
+          (searchQuery ? 'Aucune dépense ne correspond à « ' + escapeHtml(state.expensesSearchQuery) + ' ».' :
+            'Aucune dépense ne correspond à ces filtres.' + (activeChips.length ? ' <span class="select-all-link" data-action="resetExpenseFilters">Réinitialiser</span>' : '')) +
           '</div>' : rows) +
       // Les deux boutons côte à côte, même gabarit : "Ajouter une dépense"
       // reste l'action par défaut (émeraude), "Qui doit quoi à qui" (fuchsia,
@@ -3997,6 +4168,7 @@
     if (state.showConfirmSwitchAccount) out += renderConfirmSwitchAccountModal();
     if (state.showEditProfile) out += renderEditProfileModal();
     if (state.showReminderConfirm) out += renderReminderConfirmModal();
+    if (state.showExpenseFilters) out += renderExpenseFiltersModal();
     return out;
   }
 
@@ -4715,6 +4887,11 @@
         case 'setExpensesGroupFilter': setExpensesGroupFilter(id); break;
         case 'setExpensesPersonFilter': setExpensesPersonFilter(id); break;
         case 'setExpensesCategoryFilter': setExpensesCategoryFilter(id); break;
+        case 'toggleExpenseFilters': toggleExpenseFilters(); break;
+        case 'setExpensesDatePreset': setExpensesDatePreset(id); break;
+        case 'setExpensesStatusFilter': setExpensesStatusFilter(id); break;
+        case 'resetExpenseFilters': resetExpenseFilters(); break;
+        case 'removeExpenseFilterChip': removeExpenseFilterChip(id); break;
         case 'setPersonGroupFilter': setPersonGroupFilter(id); break;
         case 'openAddExpenseForGroup': openAddExpense(state.selectedGroupId); break;
         case 'openAddGroup': openAddGroup(); break;
@@ -4812,6 +4989,12 @@
         case 'settleAmount': setSettleAmount(v); break;
         case 'settleReference': setSettleReference(v); break;
         case 'expensesSearch': setExpensesSearch(v); break;
+        case 'expensesDateFrom': setExpensesDateFrom(v); break;
+        case 'expensesDateTo': setExpensesDateTo(v); break;
+        case 'expensesAmountMin': setExpensesAmountMin(v); break;
+        case 'expensesAmountMax': setExpensesAmountMax(v); break;
+        case 'expensesFilterGroupSearch': setExpensesFilterGroupSearch(v); break;
+        case 'expensesFilterPersonSearch': setExpensesFilterPersonSearch(v); break;
         case 'reminderEmailDraft':
           setReminderEmailDraft(v);
           // Bascule le bouton d'envoi directement en DOM (comme le reste de

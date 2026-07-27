@@ -1061,6 +1061,13 @@ button { font-family: inherit; }
    sélectionnée pourrait l'être davantage — cf. même logique de garde-fou
    sur les autres survols de cette feuille. */
 @media (hover: hover) { .pill:not(.active):hover:not(:active) { border-color: var(--brand-primary); } }
+/* Puce de résumé d'un filtre actif (écran Dépenses) : tout le corps de la
+   puce retire ce filtre au clic (l'icône x n'est qu'une affordance visuelle,
+   cf. renderExpenseFilterChips) — même famille visuelle que .pill mais
+   couleur de marque pour se distinguer clairement des choix non retenus. */
+.filter-chip { padding: 6px 8px 6px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--brand-primary); background: var(--status-positive-bg); color: var(--brand-primary); display: inline-flex; align-items: center; gap: 6px; }
+.filter-chip i { font-size: 11px; }
+.filter-count-badge { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--brand-primary); color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; line-height: 1; }
 .checkbox { width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--border-default); background: transparent; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; flex-shrink: 0; cursor: pointer; }
 .checkbox.checked { border-color: var(--brand-primary); background: var(--brand-primary); }
 @media (hover: hover) { .checkbox:not(.checked):hover { border-color: var(--brand-primary); } }
