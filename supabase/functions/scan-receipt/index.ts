@@ -1,11 +1,11 @@
 // Rohy — scan-receipt Edge Function
 //
-// Lit une photo de ticket de caisse via un modèle de vision (Claude,
-// Anthropic) et en extrait le libellé, le montant total et la date, pour
-// pré-remplir le formulaire d'ajout de dépense côté client — qui reste
-// toujours modifiable avant l'enregistrement. Cette fonction ne crée ni ne
-// modifie aucune dépense, elle se contente de lire l'image et de renvoyer
-// les champs devinés.
+// Lit une photo de ticket de caisse OU un PDF (facture) via un modèle de
+// vision/document (Claude, Anthropic) et en extrait le libellé, le montant
+// total et la date, pour pré-remplir le formulaire d'ajout de dépense côté
+// client — qui reste toujours modifiable avant l'enregistrement. Cette
+// fonction ne crée ni ne modifie aucune dépense, elle se contente de lire
+// le fichier et de renvoyer les champs devinés.
 //
 // Déploiement : coller ce fichier dans Supabase Dashboard → Edge Functions
 // → scan-receipt → Via Editor (même procédure que pour send-reminder,
@@ -17,7 +17,8 @@
 // Appel côté client :
 //   supabase.functions.invoke('scan-receipt', { body: { image, mimeType } })
 //   où `image` est le contenu du fichier encodé en base64 (sans le préfixe
-//   "data:...;base64,") et `mimeType` son type MIME (image/jpeg, image/png...).
+//   "data:...;base64,") et `mimeType` son type MIME (image/jpeg, image/png...
+//   ou application/pdf).
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 // Haiku : rapide et nettement moins cher que Sonnet/Opus, largement
@@ -38,23 +39,25 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-const PROMPT = `Tu regardes la photo d'un ticket de caisse. Réponds UNIQUEMENT avec un objet JSON brut (pas de texte autour, pas de balises markdown), avec exactement ces champs :
+const PROMPT = `Tu regardes soit la photo d'un ticket de caisse, soit un document (facture, souvent en PDF). Réponds UNIQUEMENT avec un objet JSON brut (pas de texte autour, pas de balises markdown), avec exactement ces champs :
 {
-  "label": string ou null,    // nom du commerce ou description courte (ex. "Carrefour", "Restaurant Le Central") — null si illisible
-  "amount": number ou null,   // montant total payé, EN UNITÉ ENTIÈRE de la devise, sans séparateur de milliers — null si illisible
-  "date": string ou null,     // date du ticket au format AAAA-MM-JJ — null si illisible ou absente
-  "currency": string ou null  // code devise ISO 4217 à 3 lettres si déductible du ticket (ex. "EUR", "USD") — sinon null
+  "label": string ou null,    // nom du commerce/émetteur de la facture ou description courte (ex. "Carrefour", "Restaurant Le Central") — null si illisible
+  "amount": number ou null,   // montant total payé/dû, EN UNITÉ ENTIÈRE de la devise, sans séparateur de milliers — null si illisible
+  "date": string ou null,     // date du ticket ou de la facture au format AAAA-MM-JJ — null si illisible ou absente
+  "currency": string ou null  // code devise ISO 4217 à 3 lettres si déductible (ex. "EUR", "USD") — sinon null
 }
 Attention à ne pas confondre séparateur de milliers et virgule décimale : un
 point, une virgule ou une espace suivi d'exactement 3 chiffres est presque
-toujours un séparateur de milliers, pas une décimale (ex. un ticket affichant
+toujours un séparateur de milliers, pas une décimale (ex. un montant affichant
 "196.720 Ar" ou "196 720 Ar" vaut 196720, PAS 196.72). Ne garde une partie
 décimale que si elle a 1 ou 2 chiffres (ex. "42,50 €" vaut 42.5). Prends bien
-le montant TOTAL final payé (pas un sous-total ni une ligne de TVA isolée).
-Si l'image n'est manifestement pas un ticket de caisse, renvoie null pour
-tous les champs.`;
+le montant TOTAL final payé/dû (pas un sous-total ni une ligne de TVA isolée
+— pour une facture avec plusieurs pages ou lignes, le total général en bas).
+Si le document n'est manifestement ni un ticket de caisse ni une facture,
+renvoie null pour tous les champs.`;
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const PDF_MIME_TYPE = 'application/pdf';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -71,9 +74,16 @@ Deno.serve(async (req) => {
     if (!image || !mimeType) {
       return jsonResponse({ error: 'image et mimeType sont requis.' }, 400);
     }
-    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-      return jsonResponse({ error: 'format d\'image non pris en charge (jpeg, png, webp ou gif attendu).' }, 400);
+    const isPdf = mimeType === PDF_MIME_TYPE;
+    if (!isPdf && !ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) {
+      return jsonResponse({ error: 'format non pris en charge (jpeg, png, webp, gif ou pdf attendu).' }, 400);
     }
+    // Un PDF est envoyé comme "document" (pas "image") — Claude le lit
+    // nativement page par page, pas besoin de le convertir en image côté
+    // client ni ici.
+    const fileBlock = isPdf
+      ? { type: 'document', source: { type: 'base64', media_type: PDF_MIME_TYPE, data: image } }
+      : { type: 'image', source: { type: 'base64', media_type: mimeType, data: image } };
 
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -88,7 +98,7 @@ Deno.serve(async (req) => {
         messages: [{
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: mimeType, data: image } },
+            fileBlock,
             { type: 'text', text: PROMPT },
           ],
         }],
@@ -97,7 +107,7 @@ Deno.serve(async (req) => {
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      return jsonResponse({ error: `échec de la lecture du ticket : ${errText}` }, 502);
+      return jsonResponse({ error: `échec de la lecture du document : ${errText}` }, 502);
     }
 
     const anthropicData = await anthropicRes.json();

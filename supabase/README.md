@@ -284,12 +284,13 @@ par groupe).
 
 ## 6. Déployer la fonction de lecture de ticket (scan-receipt)
 
-`functions/scan-receipt/index.ts` lit une photo de ticket de caisse via un
-modèle de vision (Claude, Anthropic) et renvoie le libellé, le montant total,
-la date et la devise devinés — utilisés pour pré-remplir le formulaire
-d'ajout de dépense côté client (qui reste toujours modifiable avant
-l'enregistrement). Vérifie seulement que l'appelant est authentifié, aucune
-autre donnée n'est lue ou modifiée.
+`functions/scan-receipt/index.ts` lit une photo de ticket de caisse OU un PDF
+(facture) via Claude (Anthropic) et renvoie le libellé, le montant total, la
+date et la devise devinés — utilisés pour pré-remplir le formulaire d'ajout
+de dépense côté client (qui reste toujours modifiable avant
+l'enregistrement). Un PDF est envoyé comme document (pas comme image) ;
+Claude le lit nativement, page par page. Vérifie seulement que l'appelant
+est authentifié, aucune autre donnée n'est lue ou modifiée.
 
 ```
 supabase functions deploy scan-receipt --project-ref <ref>
@@ -311,6 +312,13 @@ séparateur avec une virgule décimale et renvoyait `196.72` au lieu de
 `196720`. Le prompt précise désormais explicitement la distinction
 (un séparateur suivi d'exactement 3 chiffres est un groupement de
 milliers, pas une décimale) avec un exemple correspondant à ce cas précis.
+
+Ajouté : prise en charge des factures PDF en plus des photos de ticket
+(`application/pdf` envoyé comme bloc `document`, pas `image`) — nécessite de
+redéployer cette fonction (`supabase functions deploy scan-receipt
+--project-ref <ref>`, ou copier-coller le fichier mis à jour dans le
+Dashboard) pour que le changement prenne effet ; le reste de l'app
+(hébergée sur GitHub Pages) ne redéploie pas cette fonction automatiquement.
 
 ## 7. Déployer la fonction du lien d'invitation (join-group)
 

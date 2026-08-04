@@ -1556,17 +1556,6 @@
   function scanReceipt(file) {
     if (!file) return;
     setReceiptFile(file);
-    // Les factures PDF sont jointes telles quelles (aucune restriction côté
-    // stockage, cf. migration 0009) mais ne peuvent pas passer par la
-    // lecture automatique : scan-receipt n'accepte que des images (le
-    // modèle de vision reçoit le fichier comme image, pas comme document).
-    // Sans ce court-circuit, l'appel échouerait avec une erreur "format non
-    // pris en charge" qui donnerait à tort l'impression que la pièce jointe
-    // elle-même a échoué, alors qu'elle est déjà attachée juste au-dessus.
-    if (file.type === 'application/pdf') {
-      showToast('Facture PDF ajoutée — remplis les champs, la lecture automatique ne fonctionne que sur une photo.');
-      return;
-    }
     setStateSilent(function (s) { return { form: Object.assign({}, s.form, { scanning: true, scanError: null }) }; });
     render();
     fileToBase64(file).then(function (base64) {
@@ -1582,11 +1571,11 @@
           if (d.date) f.date = d.date;
           return { form: f };
         });
-        showToast('Ticket lu — vérifie les champs avant d\'enregistrer');
+        showToast('Document lu — vérifie les champs avant d\'enregistrer');
       });
     }).catch(function (err) {
       setState(function (s) { return { form: Object.assign({}, s.form, { scanning: false, scanError: err.message }) }; });
-      showToast('Erreur : ' + (err && err.message ? err.message : 'lecture du ticket impossible'));
+      showToast('Erreur : ' + (err && err.message ? err.message : 'lecture du document impossible'));
     });
   }
   function removeReceipt() {
