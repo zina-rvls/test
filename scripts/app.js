@@ -777,6 +777,13 @@
   function goGroups() { setState({ screen: 'groups', navStack: [] }); }
   function goHistory() { setState({ screen: 'history', navStack: [] }); }
   function goExpenses() { setState({ screen: 'expenses', navStack: [] }); }
+  // Depuis la fiche groupe (cf. renderGroupDetail, carte "Total des
+  // dépenses") : direction Dépenses déjà filtré sur ce groupe, plutôt que la
+  // vue agrégée — cohérent avec ce qu'on vient de regarder. setState direct
+  // (comme goExpenses ci-dessus), pas navigate() : "Dépenses" est un onglet
+  // racine de la nav du bas, jamais de flèche "retour" dessus (cf. showBack
+  // dans renderTopBar), donc empiler sur navStack n'aurait aucun effet visible.
+  function goExpensesForGroup(groupId) { setState({ screen: 'expenses', navStack: [], expensesGroupFilter: groupId || null }); }
   function openGroup(id) { navigate('groupDetail', { selectedGroupId: id, lastActiveGroupId: id }); }
   // Depuis Dépenses (cf. renderAllExpenses) : si un filtre par groupe est
   // actif, sa fiche a déjà sa propre section "Pour équilibrer" — sinon,
@@ -3603,7 +3610,7 @@
       }).join('');
 
     return (
-      '<div class="balance-card">' +
+      '<div class="balance-card pressable" data-action="goExpensesForGroup" data-id="' + g.id + '">' +
       '<div class="balance-label">Total des dépenses</div>' +
       '<div class="balance-amount" style="color:var(--text-primary)">' + escapeHtml(fmtIn(totalExpenses, g.currency)) + '</div>' +
       '</div>' +
@@ -4840,6 +4847,7 @@
         case 'goHome': goHome(); break;
         case 'goGroups': goGroups(); break;
         case 'goExpenses': goExpenses(); break;
+        case 'goExpensesForGroup': goExpensesForGroup(id || null); break;
         case 'goSettleFromExpenses': goSettleFromExpenses(id || null); break;
         case 'goHistory': goHistory(); break;
         case 'goBack': goBack(); break;
