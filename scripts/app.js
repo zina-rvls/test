@@ -3616,7 +3616,13 @@
       '</div>' +
       '<div class="member-table"><div class="section-label">Payé / part / solde</div>' + groupUnitToggle + memberTableHeader + memberRows + '</div>' +
       (txns.length || hasFoyerConsolidation ?
-        '<div class="section-label">Pour équilibrer</div>' +
+        // Le même bascule Par foyer/Par membre qu'au-dessus de "Payé / part /
+        // solde", répété ici : sans lui, quelqu'un qui arrive directement sur
+        // "Pour équilibrer" (la section la plus consultée) ne fait pas le
+        // lien que les pastilles tout en haut de l'écran contrôlent aussi ce
+        // qu'il regarde ici, et croit à tort qu'aucune vue par individu
+        // n'existe une fois des foyers créés.
+        '<div class="section-label">Pour équilibrer</div>' + groupUnitToggle +
         (txns.length ? suggestions : '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:14px">Rien à régler pour le moment.</div>') : '') +
       '<div class="section-label" style="margin-top:18px">Dépenses</div>' + expenseRows +
       '<button class="btn-primary pressable" style="margin-top:18px" data-action="openAddExpenseForGroup">Ajouter une dépense</button>'
