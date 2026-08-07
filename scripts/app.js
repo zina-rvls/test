@@ -1941,7 +1941,7 @@
       });
     });
   }
-  function openConfirmDeleteGroup(groupId) { setState({ showConfirmDeleteGroup: true, confirmDeleteGroupId: groupId }); }
+  function openConfirmDeleteGroup(groupId) { setState({ showGroupMenu: false, showConfirmDeleteGroup: true, confirmDeleteGroupId: groupId }); }
   function confirmDeleteGroup() {
     var groupId = state.confirmDeleteGroupId;
     if (!groupId) return;
@@ -2137,7 +2137,7 @@
     });
   }
 
-  function openManageMembers(groupId) { setState({ showManageMembers: true, manageMembersGroupId: groupId, manageMembersSearchQuery: '' }); }
+  function openManageMembers(groupId) { setState({ showGroupMenu: false, showManageMembers: true, manageMembersGroupId: groupId, manageMembersSearchQuery: '' }); }
   function setManageMembersSearch(v) { setState({ manageMembersSearchQuery: v }); }
   function toggleAddMemberForm() {
     setState(function (s) {
@@ -2328,7 +2328,7 @@
   function openConfirmLeaveGroup(groupId) {
     var g = group(groupId);
     if (!g || g.adminId === state.currentUserId) return;
-    setState({ showConfirmLeaveGroup: true, confirmLeaveGroupId: groupId });
+    setState({ showGroupMenu: false, showConfirmLeaveGroup: true, confirmLeaveGroupId: groupId });
   }
   function cancelLeaveGroup() { setState({ showConfirmLeaveGroup: false, confirmLeaveGroupId: null }); }
   function confirmLeaveGroup() {
