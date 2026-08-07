@@ -2391,6 +2391,14 @@
       loadAppData().then(function () { showToast('Foyer créé'); });
     });
   }
+  function renameHousehold(householdId, name) {
+    var trimmed = (name || '').trim();
+    if (!trimmed) { showToast('Le nom du foyer ne peut pas être vide.'); return; }
+    sb.from('households').update({ name: trimmed }).eq('id', householdId).then(function (res) {
+      if (res.error) { showToast('Erreur : ' + res.error.message); return; }
+      loadAppData().then(function () { showToast('Foyer renommé'); });
+    });
+  }
 
   // ---------- Modales ----------
   function openAccount() { setState({ showAccount: true }); }
@@ -4801,6 +4809,18 @@
       '<div class="modal-header"><div class="modal-title">Membres · ' + escapeHtml(mg.name) + '</div>' +
       '<button class="modal-close" data-action="closeModal" aria-label="Fermer"><i class="ph-bold ph-x"></i></button></div>' +
       '<div class="section-label">Foyers</div>' +
+      // Foyers existants, nom modifiable directement (comme l'e-mail d'un
+      // membre juste en dessous) — jusqu'ici seul le formulaire de création
+      // était affiché, aucune liste ne permettait de revenir sur un nom.
+      (groupHouseholds.length ?
+        '<div style="margin-bottom:10px">' +
+        groupHouseholds.map(function (h) {
+          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+            '<i class="ph-bold ph-house-line" style="color:var(--text-tertiary);flex-shrink:0"></i>' +
+            '<input class="text-input" style="margin-bottom:0;flex:1" data-bind-change="householdName" data-id="' + h.id + '" value="' + escapeHtml(h.name) + '" />' +
+            '</div>';
+        }).join('') +
+        '</div>' : '') +
       '<div style="display:flex;gap:8px;margin-bottom:14px">' +
       '<input class="text-input" style="margin-bottom:0;flex:1" data-bind="newHouseholdName" placeholder="Nom du foyer" value="' + escapeHtml(state.newHouseholdName) + '" />' +
       '<button class="btn-outline pressable" style="flex-shrink:0" data-action="createHousehold">+ Créer</button>' +
@@ -5048,6 +5068,7 @@
         case 'guardian': setGuardian(id, el.value); break;
         case 'household': setMemberHousehold(id, el.value); break;
         case 'memberEmail': setMemberEmail(id, el.value); break;
+        case 'householdName': renameHousehold(id, el.value); break;
         case 'addMemberGuardian': setAddMemberGuardian(el.value); break;
         case 'groupCurrency': setGroupCurrency(el.value); break;
         case 'expenseCurrency': selectExpenseCurrency(el.value); break;
