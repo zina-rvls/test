@@ -221,6 +221,10 @@
       confirmRemoveMemberId: null,
       showConfirmLeaveGroup: false,
       confirmLeaveGroupId: null,
+      showConfirmMergeGuest: false,
+      confirmMergeGuestId: null,
+      confirmMergeGuestEmail: '',
+      mergingGuest: false,
       showConfirmDeleteAccount: false,
       deletingAccount: false,
       accountJustDeleted: false,
@@ -2340,6 +2344,35 @@
       loadAppData().then(function () { showToast('Tu as quitté le groupe'); });
     });
   }
+  // Déclenché quand setMemberEmail échoue sur profiles_email_unique : cette
+  // adresse appartient déjà à un vrai compte ailleurs, probablement la même
+  // personne que cet invité. Propose de fusionner (cf. merge-guest-profile)
+  // plutôt que de bloquer sans solution.
+  function openConfirmMergeGuest(guestId, email) {
+    setState({ showConfirmMergeGuest: true, confirmMergeGuestId: guestId, confirmMergeGuestEmail: email });
+  }
+  function cancelMergeGuest() {
+    setState({ showConfirmMergeGuest: false, confirmMergeGuestId: null, confirmMergeGuestEmail: '' });
+  }
+  function confirmMergeGuest() {
+    if (state.mergingGuest) return;
+    var guestId = state.confirmMergeGuestId, email = state.confirmMergeGuestEmail;
+    if (!guestId || !email) return;
+    setState({ mergingGuest: true });
+    sb.functions.invoke('merge-guest-profile', { body: { guestId: guestId, targetEmail: email } }).then(function (res) {
+      return extractFunctionErrorMessage(res).then(function (errMsg) {
+        if (errMsg) throw new Error(errMsg);
+        var targetName = res.data && res.data.targetName;
+        setState({ showConfirmMergeGuest: false, confirmMergeGuestId: null, confirmMergeGuestEmail: '', mergingGuest: false });
+        loadAppData().then(function () {
+          showToast(targetName ? 'Fusionné avec le compte de ' + targetName : 'Fusion effectuée');
+        });
+      });
+    }).catch(function (err) {
+      setState({ mergingGuest: false });
+      showToast('Erreur : ' + (err && err.message ? err.message : 'fusion impossible'));
+    });
+  }
   function setShareWeight(personId, value) {
     var w = parseFloat(String(value).replace(',', '.'));
     if (isNaN(w) || w < 0) return;
@@ -2373,8 +2406,11 @@
     sb.from('profiles').update({ email: trimmed || null }).eq('id', personId).then(function (res) {
       if (res.error) {
         // Contrainte profiles_email_unique (migration 0011) : deux profils
-        // ne peuvent pas partager la même adresse.
-        if (res.error.code === '23505') { showToast('Cet e-mail est déjà utilisé par un autre membre.'); return; }
+        // ne peuvent pas partager la même adresse — le cas le plus courant
+        // est un invité dont on découvre après coup qu'il a déjà un vrai
+        // compte ailleurs, plutôt qu'un vrai doublon accidentel. On propose
+        // de fusionner (cf. openConfirmMergeGuest) plutôt que de bloquer net.
+        if (res.error.code === '23505') { openConfirmMergeGuest(personId, trimmed); return; }
         showToast('Erreur : ' + res.error.message);
         return;
       }
@@ -2411,6 +2447,7 @@
       showConfirmDeleteGroup: false, confirmDeleteGroupId: null, formError: null,
       showConfirmRemoveMember: false, confirmRemoveMemberGroupId: null, confirmRemoveMemberId: null,
       showConfirmLeaveGroup: false, confirmLeaveGroupId: null,
+      showConfirmMergeGuest: false, confirmMergeGuestId: null, confirmMergeGuestEmail: '',
       showConfirmDeleteAccount: false,
       showConfirmSwitchAccount: false,
       showEditProfile: false, editProfileError: null,
@@ -4184,6 +4221,7 @@
     if (state.showConfirmDeleteGroup) out += renderConfirmDeleteGroupModal();
     if (state.showConfirmRemoveMember) out += renderConfirmRemoveMemberModal();
     if (state.showConfirmLeaveGroup) out += renderConfirmLeaveGroupModal();
+    if (state.showConfirmMergeGuest) out += renderConfirmMergeGuestModal();
     if (state.showConfirmDeleteAccount) out += renderConfirmDeleteAccountModal();
     if (state.showConfirmSwitchAccount) out += renderConfirmSwitchAccountModal();
     if (state.showEditProfile) out += renderEditProfileModal();
@@ -4365,6 +4403,25 @@
       '<div class="modal-footer-buttons">' +
       '<button class="btn-cancel pressable" data-action="cancelLeaveGroup">Annuler</button>' +
       '<button class="btn-confirm pressable" style="background:var(--status-danger)" data-action="confirmLeaveGroup">Quitter</button>' +
+      '</div></div></div>'
+    );
+  }
+  function renderConfirmMergeGuestModal() {
+    var p = person(state.confirmMergeGuestId);
+    if (!p) return '';
+    return (
+      '<div class="modal-overlay center" data-action="cancelMergeGuest">' +
+      '<div class="modal-card" data-stop-click>' +
+      '<div class="modal-title" style="margin-bottom:14px">Fusionner avec un compte existant ?</div>' +
+      '<div style="font-size:14px;color:var(--text-secondary);margin-bottom:18px">' +
+      '« ' + escapeHtml(state.confirmMergeGuestEmail) + ' » est déjà utilisée par un compte existant. ' +
+      'Fusionner l\'historique de ' + escapeHtml(p.name) + ' (dépenses, paiements, rappels) avec ce compte ? ' +
+      escapeHtml(p.name) + ' disparaît en tant que profil séparé — cette action est irréversible.' +
+      '</div>' +
+      '<div class="modal-footer-buttons">' +
+      '<button class="btn-cancel pressable" data-action="cancelMergeGuest">Annuler</button>' +
+      '<button class="btn-confirm pressable"' + (state.mergingGuest ? ' disabled style="opacity:.6"' : '') + ' data-action="confirmMergeGuest">' +
+      (state.mergingGuest ? 'Fusion en cours…' : 'Fusionner') + '</button>' +
       '</div></div></div>'
     );
   }
@@ -4983,6 +5040,8 @@
         case 'openConfirmLeaveGroup': openConfirmLeaveGroup(id); break;
         case 'cancelLeaveGroup': cancelLeaveGroup(); break;
         case 'confirmLeaveGroup': confirmLeaveGroup(); break;
+        case 'cancelMergeGuest': cancelMergeGuest(); break;
+        case 'confirmMergeGuest': confirmMergeGuest(); break;
         case 'setGroupUnitMode': setGroupUnitMode(id); break;
         case 'createHousehold': createHousehold(); break;
         case 'toggleAddMemberForm': toggleAddMemberForm(); break;

@@ -30,7 +30,9 @@ PUIS `0012_rebrand_profile_colors.sql`, PUIS
 `0015_cascade_delete_group_payments_reminders.sql`, PUIS
 `0016_group_share_link.sql`, PUIS
 `0017_fix_handle_new_user_regression.sql`, PUIS `0018_feedback.sql`, PUIS
-`0019_expense_currency_conversion.sql`
+`0019_expense_currency_conversion.sql`, PUIS
+`0020_payment_method_add_virement.sql`, PUIS
+`0021_merge_guest_profile.sql`
 (ou, avec la CLI Supabase installée : `supabase link --project-ref <ref>`
 puis `supabase db push`).
 
@@ -358,7 +360,33 @@ supabase functions deploy delete-account --project-ref <ref>
 
 Rien à configurer en plus (pas de secret).
 
-## 9. Front-end branché
+## 9. Déployer la fonction de fusion de profil invité (merge-guest-profile)
+
+`functions/merge-guest-profile/index.ts` — fusionne un profil invité (sans
+compte) dans le compte réel existant qui possède l'adresse e-mail qu'on
+vient de saisir sur cet invité (cas où quelqu'un a été ajouté comme invité,
+avec historique de dépenses déjà enregistré, avant de découvrir qu'il a
+déjà un vrai compte ailleurs — `profiles_email_unique`, migration 0011,
+bloque alors la simple saisie de l'e-mail sans offrir de solution).
+
+Vérifie via un client "appelant" (respecte les RLS) que l'utilisateur a
+bien le droit de gérer ce profil invité précis (responsable, créateur, ou
+admin d'un groupe partagé), puis bascule sur le service role pour
+retrouver le compte cible par e-mail et appeler
+`merge_guest_into_account` (migration 0021, `SECURITY DEFINER`, EXECUTE
+retiré de `public`/`anon`/`authenticated` — appelable uniquement par le
+service role) qui réassigne dépenses/paiements/rappels/foyer vers le
+compte cible dans une seule transaction, puis supprime le profil invité
+devenu vide.
+
+```
+supabase functions deploy merge-guest-profile --project-ref <ref>
+```
+
+Rien à configurer en plus (pas de secret). Nécessite que la migration
+`0021_merge_guest_profile.sql` soit appliquée avant le premier appel.
+
+## 10. Front-end branché
 
 `scripts/app.js` appelle désormais Supabase directement (`scripts/supabase-client.js`
 contient l'URL du projet et la clé publiable) : vraie inscription/connexion
