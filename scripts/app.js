@@ -4663,7 +4663,7 @@
   // à mettre à jour si un nouveau moyen de paiement s'ajoute.
   var PAYMENT_METHOD_LABELS = {
     mvola: 'MVola', orange_money: 'Orange Money', airtel_money: 'Airtel Money',
-    especes: 'Espèces', autre: 'Autre',
+    especes: 'Espèces', virement: 'Virement', autre: 'Autre',
   };
   function renderSettleModal() {
     var sf = state.settleForm;
