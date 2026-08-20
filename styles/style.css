@@ -548,6 +548,25 @@ button { font-family: inherit; }
 .expense-row:first-child { border-top: none; }
 .expense-row:active { opacity: .7; }
 @media (hover: hover) { .expense-row:hover:not(:active) { opacity: .85; } }
+/* Balayage vers la gauche pour révéler "Supprimer" (écran Dépenses
+   uniquement, cf. renderAllExpenses) : le panneau rouge est toujours en
+   place derrière .expense-row, seul le overflow:hidden du conteneur le
+   masque tant que la ligne n'est pas glissée — cf. bindExpenseSwipeEvents
+   pour le geste lui-même (pointer events délégués, comme le reste de
+   l'app, pas d'écouteur par ligne). Bordure déplacée ici depuis
+   .expense-row (qui glisse, donc ne peut plus la porter) ; arrière-plan
+   opaque nécessaire pour que le panneau rouge ne transparaisse pas avant
+   d'être révélé. */
+.expense-row-swipe { position: relative; overflow: hidden; border-top: 1px solid var(--border-subtle); }
+.expense-row-swipe:first-child { border-top: none; }
+.expense-row-swipe .expense-row { border-top: none; background: var(--surface-canvas); position: relative; touch-action: pan-y; }
+.expense-row-swipe .expense-row.swipe-dragging { transition: none; }
+.expense-row-swipe .expense-row.swipe-settled { transition: transform .2s ease; }
+.expense-row-delete-action {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 84px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--status-danger); color: #fff; font-size: 20px; border: none; cursor: pointer; padding: 0;
+}
 .expense-icon { width: 34px; height: 34px; border-radius: 12px; background: var(--surface-overlay); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 15px; flex-shrink: 0; }
 .expense-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .expense-subtitle { font-size: 11.5px; color: var(--text-tertiary); }

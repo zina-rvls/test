@@ -225,6 +225,8 @@
       confirmMergeGuestId: null,
       confirmMergeGuestEmail: '',
       mergingGuest: false,
+      showConfirmDeleteExpense: false,
+      confirmDeleteExpenseId: null,
       showConfirmDeleteAccount: false,
       deletingAccount: false,
       accountJustDeleted: false,
@@ -1334,12 +1336,27 @@
       },
     });
   }
-  function deleteExpense() {
-    var id = state.form.editingId;
+  // Point d'entrée unique pour supprimer une dépense — depuis le lien
+  // "Supprimer cette dépense" du formulaire d'édition, ou depuis le geste
+  // de balayage sur l'écran Dépenses (cf. renderAllExpenses). Passe
+  // systématiquement par une confirmation (cf. renderConfirmDeleteExpenseModal) :
+  // l'ancien lien du formulaire supprimait jusqu'ici sans confirmation, ce
+  // qui n'aurait pas été acceptable pour le geste de balayage, beaucoup
+  // plus facile à déclencher par erreur qu'un clic après avoir ouvert la
+  // dépense en édition.
+  function openConfirmDeleteExpense(expenseId) {
+    setState({ showConfirmDeleteExpense: true, confirmDeleteExpenseId: expenseId });
+  }
+  function cancelDeleteExpense() {
+    setState({ showConfirmDeleteExpense: false, confirmDeleteExpenseId: null });
+  }
+  function confirmDeleteExpense() {
+    var id = state.confirmDeleteExpenseId;
     if (!id) return;
     sb.from('expenses').delete().eq('id', id).then(function (res) {
       if (res.error) { showToast('Erreur : ' + res.error.message); return; }
-      setState({ showAddExpense: false });
+      forgetLastModalScrollTop();
+      setState({ showConfirmDeleteExpense: false, confirmDeleteExpenseId: null, showAddExpense: false });
       loadAppData().then(function () { showToast('Dépense supprimée'); });
     });
   }
@@ -1709,6 +1726,13 @@
           sb.from('expense_participants').insert(participantRowsFor(f.editingId)).then(function (insRes) {
             if (insRes.error) { showToast('Erreur : ' + insRes.error.message); return; }
             persistReceiptChange(f.editingId, f.groupId).then(function (recRes) {
+              // Réinitialise la position de scroll mémorisée pour la feuille
+              // modale (cf. lastModalScrollTop, render()) — sans ça, la
+              // prochaine feuille ouverte (même un tout autre formulaire)
+              // hérite du scroll où celle-ci a été quittée, comme si elle
+              // s'ouvrait déjà scrollée. closeModal() le fait déjà pour ses
+              // propres fermetures ; cette sortie directe doit faire pareil.
+              forgetLastModalScrollTop();
               setState({ showAddExpense: false });
               loadAppData().then(function () {
                 showToast(recRes.error ? 'Dépense modifiée (reçu : ' + recRes.error.message + ')' : 'Dépense modifiée');
@@ -1729,6 +1753,7 @@
       sb.from('expense_participants').insert(participantRowsFor(res.data.id)).then(function (insRes) {
         if (insRes.error) { showToast('Erreur : ' + insRes.error.message); return; }
         persistReceiptChange(res.data.id, f.groupId).then(function (recRes) {
+          forgetLastModalScrollTop();
           setState({ showAddExpense: false });
           loadAppData().then(function () {
             showToast(recRes.error ? 'Dépense ajoutée à ' + g.name + ' (reçu : ' + recRes.error.message + ')' : 'Dépense ajoutée à ' + g.name);
@@ -2440,7 +2465,7 @@
   function openAccount() { setState({ showAccount: true }); }
   function toggleGroupMenu() { setState(function (s) { return { showGroupMenu: !s.showGroupMenu }; }); }
   function closeModal() {
-    lastModalScrollTop = null;
+    forgetLastModalScrollTop();
     setState({
       showAddExpense: false, showAddGroup: false, showSettle: false, showAccount: false, showGroupMenu: false, showManageMembers: false,
       showExpenseFilters: false,
@@ -2448,6 +2473,7 @@
       showConfirmRemoveMember: false, confirmRemoveMemberGroupId: null, confirmRemoveMemberId: null,
       showConfirmLeaveGroup: false, confirmLeaveGroupId: null,
       showConfirmMergeGuest: false, confirmMergeGuestId: null, confirmMergeGuestEmail: '',
+      showConfirmDeleteExpense: false, confirmDeleteExpenseId: null,
       showConfirmDeleteAccount: false,
       showConfirmSwitchAccount: false,
       showEditProfile: false, editProfileError: null,
@@ -2493,6 +2519,36 @@
   // la page "s'est rechargée" et a perdu la modification qu'on venait de
   // faire plus bas dans la liste.
   var lastModalScrollTop = null;
+  // Simplement mettre lastModalScrollTop à null avant un setState() qui
+  // ferme une modale ne suffit PAS à empêcher le report de son scroll sur
+  // la prochaine modale ouverte : render() (plus bas) recapture
+  // inconditionnellement le scrollTop de la modale encore présente dans le
+  // DOM en tout DÉBUT de rendu (avant reconstruction), donc APRÈS ce reset
+  // mais avant que la fermeture ne prenne effet — écrasant ainsi le null
+  // qu'on venait de poser. Ce drapeau, à positionner en même temps que le
+  // reset (cf. forgetModalScroll ci-dessous), fait sauter cette recapture
+  // une seule fois pour le prochain rendu.
+  var forgetModalScroll = false;
+  function forgetLastModalScrollTop() {
+    lastModalScrollTop = null;
+    forgetModalScroll = true;
+  }
+  // Geste de balayage des lignes de dépense (écran Dépenses, cf.
+  // renderAllExpenses/bindExpenseSwipeEvents) : état de glissement en cours
+  // (rien à voir avec `state`, purement transitoire — comme
+  // lastModalScrollTop ci-dessus, ne doit pas déclencher de re-rendu) et
+  // référence DOM directe vers la ligne actuellement révélée, s'il y en a
+  // une (une seule à la fois).
+  var expenseSwipeState = null;
+  var openSwipeRowEl = null;
+  function closeOpenSwipeRow() {
+    if (openSwipeRowEl && document.body.contains(openSwipeRowEl)) {
+      openSwipeRowEl.classList.remove('swipe-open');
+      openSwipeRowEl.classList.add('swipe-settled');
+      openSwipeRowEl.style.transform = 'translateX(0)';
+    }
+    openSwipeRowEl = null;
+  }
 
   // Scroll-reveal de la landing (cf. sections [data-reveal] dans
   // renderAboutScreen) : ces deux variables vivent hors de render() et
@@ -2549,7 +2605,8 @@
     }
     var focusInfo = captureFocus(root);
     var priorModalSheet = root.querySelector('.modal-sheet');
-    if (priorModalSheet) lastModalScrollTop = priorModalSheet.scrollTop;
+    if (priorModalSheet && !forgetModalScroll) lastModalScrollTop = priorModalSheet.scrollTop;
+    forgetModalScroll = false;
     root.setAttribute('data-theme', state.theme);
     // <html> porte aussi data-theme (pas seulement .app-frame) pour que le
     // fond de <body>, résolu hors du scope de la carte, corresponde toujours
@@ -3773,7 +3830,9 @@
       var paidExternal = e.paidExternal != null ? e.paidExternal : e.amount;
       var dueExternal = e.amount - paidExternal;
       return (
-        '<div class="expense-row">' +
+        '<div class="expense-row-swipe">' +
+        '<button class="expense-row-delete-action" data-action="openConfirmDeleteExpense" data-id="' + e.id + '" aria-label="Supprimer la dépense"><i class="ph-bold ph-trash"></i></button>' +
+        '<div class="expense-row swipe-settled" data-expense-swipe data-id="' + e.id + '">' +
         '<div class="expense-icon pressable" data-action="editExpense" data-id="' + e.id + '"><i class="' + e.icon + '"></i></div>' +
         '<div style="flex:1;min-width:0;cursor:pointer" data-action="editExpense" data-id="' + e.id + '">' +
         '<div class="expense-label">' + escapeHtml(e.label) + (e.receiptPath ? ' <i class="ph-bold ph-paperclip" style="font-size:12px;color:var(--text-tertiary)"></i>' : '') + '</div>' +
@@ -3787,6 +3846,7 @@
           '<button class="mark-paid-link" data-action="markPaidFull" data-id="' + e.id + '">Marquer réglé en totalité →</button>' : '') +
         '</div>' +
         '<div class="expense-amount">' + expenseAmountLabel(e, cur) + '</div>' +
+        '</div>' +
         '</div>'
       );
     }).join('');
@@ -4232,6 +4292,7 @@
     if (state.showConfirmRemoveMember) out += renderConfirmRemoveMemberModal();
     if (state.showConfirmLeaveGroup) out += renderConfirmLeaveGroupModal();
     if (state.showConfirmMergeGuest) out += renderConfirmMergeGuestModal();
+    if (state.showConfirmDeleteExpense) out += renderConfirmDeleteExpenseModal();
     if (state.showConfirmDeleteAccount) out += renderConfirmDeleteAccountModal();
     if (state.showConfirmSwitchAccount) out += renderConfirmSwitchAccountModal();
     if (state.showEditProfile) out += renderEditProfileModal();
@@ -4432,6 +4493,23 @@
       '<button class="btn-cancel pressable" data-action="cancelMergeGuest">Annuler</button>' +
       '<button class="btn-confirm pressable"' + (state.mergingGuest ? ' disabled style="opacity:.6"' : '') + ' data-action="confirmMergeGuest">' +
       (state.mergingGuest ? 'Fusion en cours…' : 'Fusionner') + '</button>' +
+      '</div></div></div>'
+    );
+  }
+  function renderConfirmDeleteExpenseModal() {
+    var e = state.expenses.find(function (x) { return x.id === state.confirmDeleteExpenseId; });
+    if (!e) return '';
+    var g = group(e.groupId);
+    return (
+      '<div class="modal-overlay center" data-action="cancelDeleteExpense">' +
+      '<div class="modal-card" data-stop-click>' +
+      '<div class="modal-title" style="margin-bottom:14px">Supprimer « ' + escapeHtml(e.label) + ' » ?</div>' +
+      '<div style="font-size:14px;color:var(--text-secondary);margin-bottom:18px">' +
+      fmtIn(e.amount, g && g.currency) + ' du ' + fmtDate(e.date) + '. Cette action est définitive.' +
+      '</div>' +
+      '<div class="modal-footer-buttons">' +
+      '<button class="btn-cancel pressable" data-action="cancelDeleteExpense">Annuler</button>' +
+      '<button class="btn-confirm pressable" style="background:var(--status-danger)" data-action="confirmDeleteExpense">Supprimer</button>' +
       '</div></div></div>'
     );
   }
@@ -4665,7 +4743,7 @@
       })() +
       '<button class="btn-primary pressable" style="margin-top:20px" data-action="submitExpense">' + (f.editingId ? 'Enregistrer les modifications' : 'Enregistrer la dépense') + '</button>' +
       (state.formError ? '<div class="form-error">' + escapeHtml(state.formError) + '</div>' : '') +
-      (f.editingId ? '<button class="delete-link" data-action="deleteExpense">Supprimer cette dépense</button>' : '') +
+      (f.editingId ? '<button class="delete-link" data-action="openConfirmDeleteExpense" data-id="' + f.editingId + '">Supprimer cette dépense</button>' : '') +
       '</div></div>'
     );
   }
@@ -4912,6 +4990,13 @@
 
   function bindEvents(root) {
     root.onclick = function (e) {
+      // Une ligne de dépense balayée ouverte (cf. bindExpenseSwipeEvents) :
+      // un tap dessus (hors bouton "Supprimer", élément frère et non
+      // descendant) la referme au lieu de déclencher editExpense — évite
+      // d'ouvrir la dépense par erreur en essayant juste de refermer le
+      // panneau rouge.
+      var openRow = e.target.closest('.expense-row.swipe-open');
+      if (openRow) { closeOpenSwipeRow(); e.stopPropagation(); return; }
       var stopEl = e.target.closest('[data-stop-click]');
       var overlay = e.target.closest('.modal-overlay');
       var el;
@@ -5031,7 +5116,9 @@
         case 'setCategory': setCategory(id); break;
         case 'setSplitMode': setSplitMode(id); break;
         case 'submitExpense': submitExpense(); break;
-        case 'deleteExpense': deleteExpense(); break;
+        case 'openConfirmDeleteExpense': openConfirmDeleteExpense(id); break;
+        case 'cancelDeleteExpense': cancelDeleteExpense(); break;
+        case 'confirmDeleteExpense': confirmDeleteExpense(); break;
         case 'viewReceipt': viewReceipt(el.getAttribute('data-path')); break;
         case 'removeReceipt': removeReceipt(); break;
         case 'clearReceiptFile': setReceiptFile(null); break;
@@ -5146,6 +5233,76 @@
         default: break;
       }
     };
+    bindExpenseSwipeEvents(root);
+  }
+
+  // Balayage vers la gauche pour révéler "Supprimer" sur une ligne de
+  // dépense (écran Dépenses uniquement, cf. renderAllExpenses) — Pointer
+  // Events plutôt que touch/mouse séparés : un seul jeu de gestionnaires
+  // couvre aussi bien le doigt que la souris (utile pour tester au clavier-
+  // souris en dev, cf. pointerType). Délégués sur `root`, jamais par ligne
+  // (cf. le reste de cette fonction) : les lignes sont entièrement
+  // reconstruites à chaque rendu, des écouteurs individuels devraient être
+  // réattachés à chaque fois pour rien. Manipule le DOM directement pendant
+  // le glissement (pas de setState/render) : à 60 i/s la reconstruction
+  // complète du DOM serait beaucoup trop lente pour rester fluide au doigt —
+  // l'état de glissement (expenseSwipeState/openSwipeRowEl, déclarés près de
+  // lastModalScrollTop) est donc volontairement hors de `state`.
+  function bindExpenseSwipeEvents(root) {
+    var DELETE_WIDTH = 84;
+    root.onpointerdown = function (e) {
+      var rowEl = e.target.closest('[data-expense-swipe]');
+      if (!rowEl) {
+        if (!e.target.closest('.expense-row-delete-action')) closeOpenSwipeRow();
+        return;
+      }
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      expenseSwipeState = {
+        rowEl: rowEl,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTransform: rowEl === openSwipeRowEl ? -DELETE_WIDTH : 0,
+        lastX: rowEl === openSwipeRowEl ? -DELETE_WIDTH : 0,
+        axisLocked: null,
+        pointerId: e.pointerId,
+      };
+    };
+    root.onpointermove = function (e) {
+      if (!expenseSwipeState || expenseSwipeState.pointerId !== e.pointerId) return;
+      var dx = e.clientX - expenseSwipeState.startX;
+      var dy = e.clientY - expenseSwipeState.startY;
+      if (expenseSwipeState.axisLocked === null) {
+        // Zone morte : distingue un vrai balayage horizontal d'un simple tap
+        // ou d'un scroll vertical de la liste, qui doit rester possible.
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        expenseSwipeState.axisLocked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        if (expenseSwipeState.axisLocked === 'x') {
+          expenseSwipeState.rowEl.classList.add('swipe-dragging');
+          expenseSwipeState.rowEl.classList.remove('swipe-settled');
+          if (openSwipeRowEl && openSwipeRowEl !== expenseSwipeState.rowEl) closeOpenSwipeRow();
+          try { expenseSwipeState.rowEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        }
+      }
+      if (expenseSwipeState.axisLocked !== 'x') return;
+      var x = Math.max(-DELETE_WIDTH, Math.min(0, expenseSwipeState.startTransform + dx));
+      expenseSwipeState.rowEl.style.transform = 'translateX(' + x + 'px)';
+      expenseSwipeState.lastX = x;
+      e.preventDefault();
+    };
+    function endSwipe(e) {
+      if (!expenseSwipeState || expenseSwipeState.pointerId !== e.pointerId) return;
+      var s = expenseSwipeState;
+      expenseSwipeState = null;
+      if (s.axisLocked !== 'x') return;
+      var open = s.lastX <= -DELETE_WIDTH / 2;
+      s.rowEl.classList.remove('swipe-dragging');
+      s.rowEl.classList.add('swipe-settled');
+      s.rowEl.classList.toggle('swipe-open', open);
+      s.rowEl.style.transform = 'translateX(' + (open ? -DELETE_WIDTH : 0) + 'px)';
+      openSwipeRowEl = open ? s.rowEl : null;
+    }
+    root.onpointerup = endSwipe;
+    root.onpointercancel = endSwipe;
   }
 
   // ---------- Démarrage ----------
