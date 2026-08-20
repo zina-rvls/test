@@ -3357,9 +3357,19 @@
     var filterGroup = filterId ? group(filterId) : null;
     var fmtC = function (n) { return fmtIn(n, filterGroup ? filterGroup.currency : null); };
     var globalDebts = filterId ? computeDebtsForGroup(filterId) : computeDebts();
+    // Sans filtre de groupe : ne garder que les personnes qui partagent
+    // encore au moins un groupe EXISTANT avec moi — sans ce filtre, un
+    // profil invité que j'ai créé restait visible ici même après
+    // suppression complète du groupe (la RLS l'autorise toujours via
+    // created_by, cf. migration 0008), alors que ses dépenses/soldes ont
+    // eux bien disparu (cascade sur groups). Un ex-membre d'un groupe
+    // encore existant reste lui volontairement visible sur la fiche de ce
+    // groupe s'il a un solde non réglé (cf. renderGroupDetail) — cas
+    // différent, pas concerné ici.
     var otherPeople = state.people.filter(function (p) {
       if (p.id === moi || p.guardianId) return false;
-      return filterGroup ? filterGroup.memberIds.indexOf(p.id) !== -1 : true;
+      if (filterGroup) return filterGroup.memberIds.indexOf(p.id) !== -1;
+      return state.groups.some(function (g) { return g.memberIds.indexOf(p.id) !== -1; });
     });
     var relevantExpenses = filterId ? state.expenses.filter(function (e) { return e.groupId === filterId; }) : state.expenses;
     var pendingShare = calc.computePendingShare(state.people, relevantExpenses, moi);
