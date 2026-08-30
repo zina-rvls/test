@@ -3670,8 +3670,8 @@
     var memberTableHeader =
       '<div style="display:flex;align-items:center;gap:10px;padding:0 0 6px">' +
       '<div style="width:30px;flex-shrink:0"></div><div style="flex:1"></div>' +
+      '<div class="col-num" style="color:var(--text-tertiary);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">Dû</div>' +
       '<div class="col-num" style="color:var(--text-tertiary);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">Payé</div>' +
-      '<div class="col-num" style="color:var(--text-tertiary);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">Part</div>' +
       '<div class="col-bal" style="color:var(--text-tertiary);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">Solde</div>' +
       '</div>';
 
@@ -3700,8 +3700,8 @@
           '<div class="member-row">' +
           '<div class="avatar avatar-30" style="background:' + p.color + '">' + initials(p.name) + '</div>' +
           '<div class="col-name">' + escapeHtml(p.name) + (isExMember ? '<span class="badge-child inline">Ex-membre</span>' : '') + shareBadge(p, true) + '</div>' +
-          '<div class="col-num">' + fmtIn(paid, g.currency) + '</div>' +
           '<div class="col-num">' + fmtIn(share, g.currency) + '</div>' +
+          '<div class="col-num">' + fmtIn(paid, g.currency) + '</div>' +
           '<div class="col-bal" style="color:' + balColor + '">' + escapeHtml(balLabel) + '</div>' +
           '</div>'
         );
@@ -3714,8 +3714,8 @@
         '<div class="avatar avatar-30" style="background:var(--surface-overlay);color:var(--text-secondary)"><i class="ph-bold ph-house-line"></i></div>' +
         '<div class="col-name">' + escapeHtml(u.label) + '<span class="badge-child inline">Foyer</span>' +
         '<div style="font-size:11px;font-weight:400;color:var(--text-tertiary);margin-top:2px">' + escapeHtml(memberNames) + '</div></div>' +
-        '<div class="col-num">' + fmtIn(paid, g.currency) + '</div>' +
         '<div class="col-num">' + fmtIn(share, g.currency) + '</div>' +
+        '<div class="col-num">' + fmtIn(paid, g.currency) + '</div>' +
         '<div class="col-bal" style="color:' + colorForBalance(bal) + '">' + escapeHtml(balLabelH) + '</div>' +
         '</div>'
       );
@@ -3767,7 +3767,7 @@
       '<div class="balance-label">Total des dépenses</div>' +
       '<div class="balance-amount" style="color:var(--text-primary)">' + escapeHtml(fmtIn(totalExpenses, g.currency)) + '</div>' +
       '</div>' +
-      '<div class="member-table"><div class="section-label">Payé / part / solde</div>' + groupUnitToggle + memberTableHeader + memberRows + '</div>' +
+      '<div class="member-table"><div class="section-label">Dû / payé / solde</div>' + groupUnitToggle + memberTableHeader + memberRows + '</div>' +
       (txns.length || hasFoyerConsolidation ?
         // Le même bascule Par foyer/Par membre qu'au-dessus de "Payé / part /
         // solde", répété ici : sans lui, quelqu'un qui arrive directement sur
