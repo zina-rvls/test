@@ -227,6 +227,8 @@
       mergingGuest: false,
       showConfirmDeleteExpense: false,
       confirmDeleteExpenseId: null,
+      showConfirmDeletePayment: false,
+      confirmDeletePaymentId: null,
       showConfirmDeleteAccount: false,
       deletingAccount: false,
       accountJustDeleted: false,
@@ -1360,6 +1362,25 @@
       loadAppData().then(function () { showToast('Dépense supprimée'); });
     });
   }
+  // Supprimer un paiement enregistré par erreur (mauvais montant, mauvaise
+  // personne...) — remet les parts correspondantes à "non remboursées"
+  // (cf. computeExpenseStatuses, qui consomme les paiements dans l'ordre
+  // chronologique pour éteindre la dette expense par expense).
+  function openConfirmDeletePayment(paymentId) {
+    setState({ showConfirmDeletePayment: true, confirmDeletePaymentId: paymentId });
+  }
+  function cancelDeletePayment() {
+    setState({ showConfirmDeletePayment: false, confirmDeletePaymentId: null });
+  }
+  function confirmDeletePayment() {
+    var id = state.confirmDeletePaymentId;
+    if (!id) return;
+    sb.from('payments').delete().eq('id', id).then(function (res) {
+      if (res.error) { showToast('Erreur : ' + res.error.message); return; }
+      setState({ showConfirmDeletePayment: false, confirmDeletePaymentId: null });
+      loadAppData().then(function () { showToast('Remboursement supprimé'); });
+    });
+  }
   function markExpensePaidFull(expenseId) {
     var e = state.expenses.find(function (x) { return x.id === expenseId; });
     if (!e) return;
@@ -2474,6 +2495,7 @@
       showConfirmLeaveGroup: false, confirmLeaveGroupId: null,
       showConfirmMergeGuest: false, confirmMergeGuestId: null, confirmMergeGuestEmail: '',
       showConfirmDeleteExpense: false, confirmDeleteExpenseId: null,
+      showConfirmDeletePayment: false, confirmDeletePaymentId: null,
       showConfirmDeleteAccount: false,
       showConfirmSwitchAccount: false,
       showEditProfile: false, editProfileError: null,
@@ -3735,6 +3757,7 @@
           '<div style="flex:1;min-width:0"><div class="history-text">' + escapeHtml(person(p.from).name) + ' → ' + escapeHtml(person(p.to).name) + (methodLabel ? ' · ' + escapeHtml(methodLabel) : '') + '</div>' +
           '<div class="history-date">' + fmtDate(p.date) + '</div></div>' +
           '<div class="history-amount" style="color:var(--status-positive)">' + fmtIn(p.amount, g.currency) + '</div>' +
+          '<button class="btn-icon-danger pressable" style="width:30px;height:30px;flex-shrink:0" data-action="openConfirmDeletePayment" data-id="' + p.id + '" title="Supprimer ce remboursement" aria-label="Supprimer ce remboursement"><i class="ph-bold ph-trash"></i></button>' +
           '</div>'
         );
       }).join('');
@@ -4312,6 +4335,7 @@
     if (state.showConfirmLeaveGroup) out += renderConfirmLeaveGroupModal();
     if (state.showConfirmMergeGuest) out += renderConfirmMergeGuestModal();
     if (state.showConfirmDeleteExpense) out += renderConfirmDeleteExpenseModal();
+    if (state.showConfirmDeletePayment) out += renderConfirmDeletePaymentModal();
     if (state.showConfirmDeleteAccount) out += renderConfirmDeleteAccountModal();
     if (state.showConfirmSwitchAccount) out += renderConfirmSwitchAccountModal();
     if (state.showEditProfile) out += renderEditProfileModal();
@@ -4529,6 +4553,24 @@
       '<div class="modal-footer-buttons">' +
       '<button class="btn-cancel pressable" data-action="cancelDeleteExpense">Annuler</button>' +
       '<button class="btn-confirm pressable" style="background:var(--status-danger)" data-action="confirmDeleteExpense">Supprimer</button>' +
+      '</div></div></div>'
+    );
+  }
+  function renderConfirmDeletePaymentModal() {
+    var p = state.payments.find(function (x) { return x.id === state.confirmDeletePaymentId; });
+    if (!p) return '';
+    var g = p.groupId ? group(p.groupId) : null;
+    return (
+      '<div class="modal-overlay center" data-action="cancelDeletePayment">' +
+      '<div class="modal-card" data-stop-click>' +
+      '<div class="modal-title" style="margin-bottom:14px">Supprimer ce remboursement ?</div>' +
+      '<div style="font-size:14px;color:var(--text-secondary);margin-bottom:18px">' +
+      escapeHtml(person(p.from).name) + ' → ' + escapeHtml(person(p.to).name) + ' · ' + fmtIn(p.amount, g && g.currency) + ' du ' + fmtDate(p.date) + '. ' +
+      'La dette correspondante redevient non réglée. Cette action est définitive.' +
+      '</div>' +
+      '<div class="modal-footer-buttons">' +
+      '<button class="btn-cancel pressable" data-action="cancelDeletePayment">Annuler</button>' +
+      '<button class="btn-confirm pressable" style="background:var(--status-danger)" data-action="confirmDeletePayment">Supprimer</button>' +
       '</div></div></div>'
     );
   }
@@ -5138,6 +5180,9 @@
         case 'openConfirmDeleteExpense': openConfirmDeleteExpense(id); break;
         case 'cancelDeleteExpense': cancelDeleteExpense(); break;
         case 'confirmDeleteExpense': confirmDeleteExpense(); break;
+        case 'openConfirmDeletePayment': openConfirmDeletePayment(id); break;
+        case 'cancelDeletePayment': cancelDeletePayment(); break;
+        case 'confirmDeletePayment': confirmDeletePayment(); break;
         case 'viewReceipt': viewReceipt(el.getAttribute('data-path')); break;
         case 'removeReceipt': removeReceipt(); break;
         case 'clearReceiptFile': setReceiptFile(null); break;
