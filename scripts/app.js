@@ -3699,7 +3699,7 @@
         return (
           '<div class="member-row">' +
           '<div class="avatar avatar-30" style="background:' + p.color + '">' + initials(p.name) + '</div>' +
-          '<div class="col-name">' + escapeHtml(p.name) + (isExMember ? '<span class="badge-child inline">Ex-membre</span>' : '') + shareBadge(p, true) + '</div>' +
+          '<div class="col-name">' + escapeHtml(p.name) + (isExMember ? '<span class="badge-child inline">Ex-membre</span>' : '') + '</div>' +
           '<div class="col-num">' + fmtIn(share, g.currency) + '</div>' +
           '<div class="col-num">' + fmtIn(paid, g.currency) + '</div>' +
           '<div class="col-bal" style="color:' + balColor + '">' + escapeHtml(balLabel) + '</div>' +
