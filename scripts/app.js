@@ -3721,6 +3721,24 @@
         );
       }).join('');
 
+    // Remboursements effectués (enregistrés via "Enregistrer un paiement" ou
+    // le raccourci "Pour équilibrer") — jusqu'ici visibles uniquement dans
+    // l'Historique global, pas sur la fiche du groupe concerné. Même gabarit
+    // que là-bas (.history-row) pour rester cohérent.
+    var paymentRows = state.payments.filter(function (p) { return p.groupId === g.id; })
+      .slice().sort(function (a, b) { return b.date.localeCompare(a.date); })
+      .map(function (p) {
+        var methodLabel = p.paymentMethod ? PAYMENT_METHOD_LABELS[p.paymentMethod] : null;
+        return (
+          '<div class="history-row">' +
+          '<div class="history-icon" style="background:var(--status-positive-bg);color:var(--status-positive)"><i class="ph-bold ph-check-circle"></i></div>' +
+          '<div style="flex:1;min-width:0"><div class="history-text">' + escapeHtml(person(p.from).name) + ' → ' + escapeHtml(person(p.to).name) + (methodLabel ? ' · ' + escapeHtml(methodLabel) : '') + '</div>' +
+          '<div class="history-date">' + fmtDate(p.date) + '</div></div>' +
+          '<div class="history-amount" style="color:var(--status-positive)">' + fmtIn(p.amount, g.currency) + '</div>' +
+          '</div>'
+        );
+      }).join('');
+
     return (
       '<div class="balance-card pressable" data-action="goExpensesForGroup" data-id="' + g.id + '">' +
       '<div class="balance-label">Total des dépenses</div>' +
@@ -3737,6 +3755,7 @@
         '<div class="section-label">Pour équilibrer</div>' + groupUnitToggle +
         (txns.length ? suggestions : '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:14px">Rien à régler pour le moment.</div>') : '') +
       '<div class="section-label" style="margin-top:18px">Dépenses</div>' + expenseRows +
+      (paymentRows ? '<div class="section-label" style="margin-top:18px">Remboursements effectués</div>' + paymentRows : '') +
       '<button class="btn-primary pressable" style="margin-top:18px" data-action="openAddExpenseForGroup">Ajouter une dépense</button>'
     );
   }
