@@ -270,7 +270,6 @@
       expensesDatePreset: 'all',
       expensesDateFrom: '',
       expensesDateTo: '',
-      expensesStatusFilter: null,
       expensesAmountMin: '',
       expensesAmountMax: '',
       showExpenseFilters: false,
@@ -922,7 +921,6 @@
   function setExpensesDatePreset(v) { setState({ expensesDatePreset: v || 'all', expensesDateFrom: '', expensesDateTo: '' }); }
   function setExpensesDateFrom(v) { setState({ expensesDatePreset: 'custom', expensesDateFrom: v }); }
   function setExpensesDateTo(v) { setState({ expensesDatePreset: 'custom', expensesDateTo: v }); }
-  function setExpensesStatusFilter(v) { setState({ expensesStatusFilter: v || null }); }
   function setExpensesAmountMin(v) { setState({ expensesAmountMin: v }); }
   function setExpensesAmountMax(v) { setState({ expensesAmountMax: v }); }
   function setExpensesFilterGroupSearch(v) { setState({ expensesFilterGroupSearch: v }); }
@@ -934,7 +932,7 @@
     setState({
       expensesGroupFilter: null, expensesPersonFilter: null, expensesCategoryFilter: null,
       expensesDatePreset: 'all', expensesDateFrom: '', expensesDateTo: '',
-      expensesStatusFilter: null, expensesAmountMin: '', expensesAmountMax: '',
+      expensesAmountMin: '', expensesAmountMax: '',
     });
   }
   // Retire une seule puce de filtre actif (ligne de résumé au-dessus de la
@@ -944,7 +942,6 @@
     else if (key === 'person') setExpensesPersonFilter(null);
     else if (key === 'category') setExpensesCategoryFilter(null);
     else if (key === 'date') setExpensesDatePreset('all');
-    else if (key === 'status') setExpensesStatusFilter(null);
     else if (key === 'amount') setState({ expensesAmountMin: '', expensesAmountMax: '' });
   }
   function setPersonGroupFilter(id) { setState({ personGroupFilter: id || null }); }
@@ -3276,12 +3273,6 @@
 
   // Options des filtres Statut/Période de l'écran Dépenses — partagées entre
   // la modale (choix) et les puces de résumé (libellé court affiché).
-  var EXPENSE_STATUS_OPTIONS = [
-    { id: 'personnelle', label: 'Personnelle' },
-    { id: 'remboursée', label: 'Remboursée' },
-    { id: 'partiellement remboursée', label: 'Partielle' },
-    { id: 'non remboursée', label: 'Non remboursée' },
-  ];
   var EXPENSE_DATE_PRESETS = [
     { id: 'all', label: 'Toutes les dates' },
     { id: 'this_month', label: 'Ce mois-ci' },
@@ -3355,10 +3346,6 @@
         : (preset ? preset.label : '');
       chips.push({ key: 'date', label: dateLabel });
     }
-    if (state.expensesStatusFilter) {
-      var st = EXPENSE_STATUS_OPTIONS.find(function (s) { return s.id === state.expensesStatusFilter; });
-      if (st) chips.push({ key: 'status', label: st.label });
-    }
     if ((state.expensesAmountMin || '').trim() || (state.expensesAmountMax || '').trim()) {
       var minL = (state.expensesAmountMin || '').trim(), maxL = (state.expensesAmountMax || '').trim();
       chips.push({ key: 'amount', label: minL && maxL ? minL + '–' + maxL : minL ? '≥ ' + minL : '≤ ' + maxL });
@@ -3408,12 +3395,6 @@
         '<div style="flex:1"><div class="field-label">Du</div><input class="text-input" style="margin-bottom:0" type="date" data-bind="expensesDateFrom" value="' + escapeHtml(state.expensesDateFrom) + '" /></div>' +
         '<div style="flex:1"><div class="field-label">Au</div><input class="text-input" style="margin-bottom:0" type="date" data-bind="expensesDateTo" value="' + escapeHtml(state.expensesDateTo) + '" /></div>' +
         '</div>' : '') +
-      '<div class="section-label">Statut</div>' +
-      '<div class="pill-row" style="margin-bottom:16px">' +
-      '<div class="pill' + (!state.expensesStatusFilter ? ' active' : '') + '" data-action="setExpensesStatusFilter" data-id="">Tous statuts</div>' +
-      EXPENSE_STATUS_OPTIONS.map(function (s) {
-        return '<div class="pill' + (state.expensesStatusFilter === s.id ? ' active' : '') + '" data-action="setExpensesStatusFilter" data-id="' + s.id + '">' + escapeHtml(s.label) + '</div>';
-      }).join('') + '</div>' +
       '<div class="section-label">Montant</div>' +
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:20px">' +
       '<input class="text-input" style="margin-bottom:0" inputmode="decimal" placeholder="Min" data-bind="expensesAmountMin" value="' + escapeHtml(state.expensesAmountMin) + '" />' +
@@ -3831,23 +3812,17 @@
     var filterGroup = filterId ? group(filterId) : null;
     var fmtC = function (n) { return fmtIn(n, filterGroup ? filterGroup.currency : null); };
     var expenses = filterId ? state.expenses.filter(function (e) { return e.groupId === filterId; }) : state.expenses;
-    var payments = filterId ? state.payments.filter(function (p) { return p.groupId === filterId; }) : state.payments;
-    var statuses = calc.computeExpenseStatuses(state.people, expenses, payments);
     var total = expenses.reduce(function (a, e) { return a + e.amount; }, 0);
-    var totalOwed = Object.values(statuses).reduce(function (a, st) { return a + st.owed; }, 0);
-    var totalRemaining = Object.values(statuses).reduce(function (a, st) { return a + st.remaining; }, 0);
     var totalDueExternal = expenses.reduce(function (a, e) { return a + (e.amount - (e.paidExternal != null ? e.paidExternal : e.amount)); }, 0);
 
     var searchQuery = (state.expensesSearchQuery || '').trim().toLowerCase();
     var personFilter = state.expensesPersonFilter || null;
     var categoryFilter = state.expensesCategoryFilter || null;
-    var statusFilter = state.expensesStatusFilter || null;
     var amountMin = parseFloat((state.expensesAmountMin || '').replace(',', '.'));
     var amountMax = parseFloat((state.expensesAmountMax || '').replace(',', '.'));
     var visibleExpenses = expenses.filter(function (e) {
       if (personFilter && e.paidBy !== personFilter && e.participants.indexOf(personFilter) === -1) return false;
       if (categoryFilter && categoryForIcon(e.icon) !== categoryFilter) return false;
-      if (statusFilter && (!statuses[e.id] || statuses[e.id].status !== statusFilter)) return false;
       if (!isNaN(amountMin) && e.amount < amountMin) return false;
       if (!isNaN(amountMax) && e.amount > amountMax) return false;
       if (!expenseDateMatchesFilter(e, state.expensesDatePreset, state.expensesDateFrom, state.expensesDateTo)) return false;
@@ -3868,7 +3843,6 @@
     var rows = visibleExpenses.slice().sort(sortComparators[sortBy]).map(function (e) {
       var g = group(e.groupId);
       var cur = g && g.currency;
-      var st = statuses[e.id];
       var paidExternal = e.paidExternal != null ? e.paidExternal : e.amount;
       var dueExternal = e.amount - paidExternal;
       return (
@@ -3879,10 +3853,6 @@
         '<div style="flex:1;min-width:0;cursor:pointer" data-action="editExpense" data-id="' + e.id + '">' +
         '<div class="expense-label">' + escapeHtml(e.label) + (e.receiptPath ? ' <i class="ph-bold ph-paperclip" style="font-size:12px;color:var(--text-tertiary)"></i>' : '') + '</div>' +
         '<div class="expense-subtitle">' + (g ? escapeHtml(g.name) + ' · ' : '') + 'payé par ' + escapeHtml(person(e.paidBy).name) + ' · ' + fmtDate(e.date) + ' · ' + e.participants.length + ' pers.</div>' +
-        '<div class="expense-meta-row">' +
-        '<span class="status-badge" style="color:' + st.color + ';background:' + st.bg + '">' + st.status + '</span>' +
-        (st.remaining > 0.5 ? '<span style="font-size:11px;color:var(--text-tertiary)">' + fmtIn(st.remaining, cur) + ' restant entre vous</span>' : '') +
-        '</div>' +
         (dueExternal > 0.5 ?
           '<div class="due-external">acompte versé ' + fmtIn(paidExternal, cur) + ' · reste ' + fmtIn(dueExternal, cur) + ' à verser au bailleur</div>' +
           '<button class="mark-paid-link" data-action="markPaidFull" data-id="' + e.id + '">Marquer réglé en totalité →</button>' : '') +
@@ -3902,8 +3872,6 @@
         '<div class="warning-banner-body">Tes groupes utilisent des devises différentes — choisis un groupe dans les filtres pour voir les totaux.</div></div>' :
         '<div class="summary-cards">' +
         '<div class="summary-card"><div class="summary-card-label">Total</div><div class="summary-card-value" style="color:var(--text-primary)">' + fmtC(total) + '</div></div>' +
-        '<div class="summary-card"><div class="summary-card-label">Remboursé</div><div class="summary-card-value" style="color:var(--status-positive)">' + fmtC(totalOwed - totalRemaining) + '</div></div>' +
-        '<div class="summary-card"><div class="summary-card-label">Restant dû</div><div class="summary-card-value" style="color:var(--status-danger)">' + fmtC(totalRemaining) + '</div></div>' +
         '</div>' +
         (totalDueExternal > 0.5 ? '<div class="warning-banner" style="padding:10px 14px;font-size:12.5px">' + fmtC(totalDueExternal) + ' restent à verser à des tiers (acomptes non soldés)</div>' : '')) +
       (expenses.length > 0 ?
@@ -5135,7 +5103,6 @@
         case 'setExpensesCategoryFilter': setExpensesCategoryFilter(id); break;
         case 'toggleExpenseFilters': toggleExpenseFilters(); break;
         case 'setExpensesDatePreset': setExpensesDatePreset(id); break;
-        case 'setExpensesStatusFilter': setExpensesStatusFilter(id); break;
         case 'resetExpenseFilters': resetExpenseFilters(); break;
         case 'removeExpenseFilterChip': removeExpenseFilterChip(id); break;
         case 'setPersonGroupFilter': setPersonGroupFilter(id); break;
