@@ -32,7 +32,7 @@ PUIS `0012_rebrand_profile_colors.sql`, PUIS
 `0017_fix_handle_new_user_regression.sql`, PUIS `0018_feedback.sql`, PUIS
 `0019_expense_currency_conversion.sql`, PUIS
 `0020_payment_method_add_virement.sql`, PUIS
-`0021_merge_guest_profile.sql`
+`0021_merge_guest_profile.sql`, PUIS `0022_payments_delete.sql`
 (ou, avec la CLI Supabase installée : `supabase link --project-ref <ref>`
 puis `supabase db push`).
 
